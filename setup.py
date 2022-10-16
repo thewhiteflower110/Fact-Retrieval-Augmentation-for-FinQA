@@ -1,10 +1,12 @@
-from distutils.core import setup
-
-setup(name='Distutils',
-      version='1.0',
-      description='Python Distribution Utilities',
-      author='Greg Ward',
-      author_email='gward@python.net',
-      url='https://www.python.org/sigs/distutils-sig/',
-      packages=['distutils', 'distutils.command'],
-     )
+setup(
+    name='Fact-Retrieval-Augmentation-for-FinQA',
+    version='0.1.0',
+    packages=find_packages(include=['Fact-Retrieval-Augmentation-for-FinQA', 'Fact-Retrieval-Augmentation-for-FinQA.*']),
+    install_requires=[
+        'PyYAML',
+        'pandas==0.23.3',
+        'numpy>=1.14.5',
+        'matplotlib>=2.2.0,,
+        'jupyter'
+    ]
+)
