@@ -4,8 +4,8 @@ from transformers import AutoModel,  AutoConfig
 from typing import Optional, Dict, Any, Tuple, List
 from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
 from transformers.optimization import get_cosine_schedule_with_warmup
-class RetrieverModel:
-    
+
+class RetrieverModel:    
     def __init__(self,given_model,topn,dropout_rate,warmup_steps,optimizer,lr_scheduler):
         '''
         Metrics in the paper--->
@@ -39,9 +39,9 @@ class RetrieverModel:
         self.topn = topn
         self.dropout_rate = dropout_rate
         self.warmup_steps = warmup_steps
-        self.opt_params = optimizer
+        self.opt_params = optimizer["init_args"]
         self.lrs_params = lr_scheduler
-        self.predictions = []
+        #self.predictions = []
     
     def forward(self, input_ids, attention_mask, segment_ids, metadata) -> List[Dict[str, Any]]:
         
