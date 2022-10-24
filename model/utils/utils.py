@@ -1,3 +1,9 @@
+import sys 
+# setting path
+sys.path.append('../')
+# importing
+from fa import constants
+
 def read_txt(input_path):
     """Read a txt file into a list."""
     with open(input_path) as input_file:
@@ -8,8 +14,8 @@ def read_txt(input_path):
     return items
 
 def get_op_const_list():
-    op_list_file = "../txt_files/operation_list.txt"
-    const_list_file = "../txt_files/constant_list.txt"
+    op_list_file = constants.op_list_file
+    const_list_file = constants.const_list_file
     op_list = read_txt(op_list_file)
     op_list = [op + '(' for op in op_list]
     op_list = ['EOF', 'UNK', 'GO', ')'] + op_list
