@@ -1,0 +1,32 @@
+seed_everything: 333
+model:
+  init_args:
+    transformer_model_name: &transformer roberta-base
+    topn: 10
+    dropout_rate: 0.1
+    optimizer:
+      init_args: 
+        lr: 2.0e-5
+        betas: 
+          - 0.9
+          - 0.999
+        eps: 1.0e-8
+        weight_decay: 0.1
+    lr_scheduler:
+      name: linear
+      init_args:
+        num_warmup_steps: 100
+        num_training_steps: 10000
+
+data:
+  init_args:
+    transformer_model_name: *transformer
+    batch_size: 24
+    val_batch_size: 64
+    num_workers: 8
+    train_file_path: dataset/train.json
+    val_file_path: dataset/dev.json
+    train_max_instances: -1
+    val_max_instances: -1
+
+# clear; export PYTHONPATH=`pwd`; python trainer.py fit --config training_configs/retriever_finetuning.yaml
