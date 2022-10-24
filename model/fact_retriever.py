@@ -6,42 +6,24 @@ from transformers.optimization import AdamW, get_constant_schedule_with_warmup, 
 from transformers.optimization import get_cosine_schedule_with_warmup
 
 class RetrieverModel:    
-    def __init__(self,given_model,topn,dropout_rate,warmup_steps,optimizer,lr_scheduler):
-        '''
-        Metrics in the paper--->
-        topn: 10
-        dropout_rate: 0.1
-        optimizer:
-        init_args: 
-            lr: 2.0e-5
-            betas: 
-            - 0.9
-            - 0.999
-            eps: 1.0e-8
-            weight_decay: 0.1
-        lr_scheduler:
-        name: linear
-        init_args:
-            num_warmup_steps: 100
-            num_training_steps: 10000
-
-        '''
-        self.model = AutoModel.from_pretrained(given_model)
-        self.model_config = AutoConfig.from_pretrained(self.transformer_model_name)
+    def __init__(self, config):
+        self.model = AutoModel.from_pretrained(config["transformer_model_name"])
+        self.model_config = AutoConfig.from_pretrained(config["transformer_model_name"])
         self.criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
         hidden_size = self.model_config.hidden_size
         
+        self.topn = config["topn"]
+        self.dropout_rate = config["dropout_rate"]
+        self.warmup_steps = config["lr_scheduler"]["init_args"]["num_warmup_steps"]
+        self.opt_params = config["optimizer"]["init_args"]
+        self.lrs_params = config["lr_scheduler"]
+        #self.predictions = []
+
         self.classifier = nn.Sequential(
           nn.Linear(hidden_size, hidden_size, bias=True),
           nn.Dropout(self.dropout_rate),
           nn.Linear(hidden_size, 2, bias=True)
         )
-        self.topn = topn
-        self.dropout_rate = dropout_rate
-        self.warmup_steps = warmup_steps
-        self.opt_params = optimizer["init_args"]
-        self.lrs_params = lr_scheduler
-        #self.predictions = []
     
     def forward(self, input_ids, attention_mask, segment_ids, metadata) -> List[Dict[str, Any]]:
         
