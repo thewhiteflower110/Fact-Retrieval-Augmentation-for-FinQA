@@ -11,11 +11,11 @@ setup(
         'matplotlib>=2.2.0',
         'jupyter',
         'tokenizers==0.12.1',
-        'torch==1.11.0+cu113',
+        'torch==1.11.0',
         'torchmetrics==0.9.2',
-        'torchvision==0.12.0+cu113',
+        'torchvision==0.12.0',
         'tqdm==4.64.0',
-        'transformers==4.20.1',
+        'transformers>=4.20.1',
         'huggingface-hub==0.8.1'
     ]
 )
