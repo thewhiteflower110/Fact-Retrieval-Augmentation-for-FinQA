@@ -19,8 +19,7 @@ logger.py # Contains log methods
 utils.py #contains utility functions
 ```
 
-To run the code, first use:
+To run the code, configure train settings in train.py and then use:
 ```
-python setup.py install #installs all the requirements and changes directory to required setting
+sh run.sh
 ```
-Next, in order to run the code, you need to make changes to train_config.py and then run train.py
