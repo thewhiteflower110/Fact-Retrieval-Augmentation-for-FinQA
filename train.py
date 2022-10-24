@@ -1,17 +1,15 @@
 import time, random, numpy as np, argparse, sys, re, os
 from types import SimpleNamespace
-
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
-
-# change it with respect to the original model
-from tokenizer import BertTokenizer
-from bert import BertModel
-from optimizer import AdamW
+#from bert import BertModel
+#from optimizer import AdamW
 from tqdm import tqdm
-
+from model.fact_retriever import RetrieverModel
+import yaml
+import constants
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -69,29 +67,33 @@ def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     #### Load data
     # create the data and its corresponding datasets and dataloader
-    train_data, num_labels = create_data(args.train, 'train')
-    dev_data = create_data(args.dev, 'valid')
+    #train_data, num_labels = create_data(args.train, 'train')
+    #dev_data = create_data(args.dev, 'valid')
 
-    train_dataset = BertDataset(train_data, args)
-    dev_dataset = BertDataset(dev_data, args)
+    #train_dataset = BertDataset(train_data, args)
+    #dev_dataset = BertDataset(dev_data, args)
 
-    train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size,
-                                  collate_fn=train_dataset.collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=args.batch_size,
-                                collate_fn=dev_dataset.collate_fn)
+    #train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size,
+    #                              collate_fn=train_dataset.collate_fn)
+    #dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=args.batch_size,
+    #                            collate_fn=dev_dataset.collate_fn)
 
     #### Init model
-    config = {'hidden_dropout_prob': args.hidden_dropout_prob,
-              'num_labels': num_labels,
-              'hidden_size': 768,
-              'data_dir': '.',
-              'option': args.option}
 
-    config = SimpleNamespace(**config)
+    retriever_config = yaml.load(open(constants.retriever_config))
+    config = retriever_config["model"]["init_args"]
+    retriever = RetrieverModel(config)
+    retriever = retriever.to(device)
 
-    # initialize the Sentence Classification Model
-    model = BertSentClassifier(config)
-    model = model.to(device)
+    #question classification config
+    qc_config = yaml.load(open(constants.qc_config))
+    config = qc_config["model"]["init_args"]
+    retriever = RetrieverModel(config)
+    retriever = retriever.to(device)
+
+    for epoch in range(args.epochs):
+      retriever_train_loss = retriever.train()
+
 
     lr = args.lr
     ## specify the optimizer
