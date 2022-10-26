@@ -7,7 +7,9 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
 #from bert import BertModel
-from optimizer import AdamW
+#from optimizer import AdamW
+from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
+from transformers.optimization import get_cosine_schedule_with_warmup
 from tqdm import tqdm
 from model.fact_retriever import RetrieverModel
 from model.question_classification import QuestionClassification
@@ -104,30 +106,30 @@ def train(args):
 
     #### Init model
 
-    retriever_config = yaml.load(open(constants.retriever_config))
+    with open(constants.retriever_config, 'r') as file:
+        retriever_config = yaml.safe_load(file)    
     config = retriever_config["model"]["init_args"]
     retriever = RetrieverModel(config)
     retriever = retriever.to(device)
 
     #question classification config
-    qc_config = yaml.load(open(constants.qc_config))
+    with open(constants.qc_config, 'r') as file:
+        qc_config = yaml.safe_load(file)  
     config = qc_config["model"]["init_args"]
     questionClassificationModel = QuestionClassification(config)
     questionClassificationModel = questionClassificationModel.to(device)
 
-    #lr = args.lr
-    ## specify the optimizer
-    #optimizer = AdamW(model.parameters(), lr=lr)
-    #best_dev_acc = 0
-
     #Note: make this parallel
     #Finetune the Question Classification Model
+    opt_params = qc_config["model"]["init_args"]["optimizer"]["init_args"]
+    lrs_params = qc_config["model"]["init_args"]["lr_scheduler"]
+    optimizer = configure_optimizers(questionClassificationModel,opt_params,lrs_params)
+    
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
         num_batches = 0
-        optimizer = qc_config["model"]["optimizer"]["init_args"]
-        optimizer.zero_grad()
+        
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
             input_ids = torch.tensor(batch["input_ids"]).to("cuda")
             attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -139,16 +141,20 @@ def train(args):
             optimizer.step()
             #logging mechanism for loss
         #epoch wise loss logs here--
+        #scheduler.step()
         acc, f1, y_true, y_preds, avg_loss = qc_model_eval(val_dataloader, questionClassificationModel, device)
 
+    PATH ="./"
+    torch.save(questionClassificationModel.state_dict(), PATH)
     #Note: make this parallel
     #Finetune the Question Classification Model
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
         num_batches = 0
-        optimizer = retriever_config["model"]["optimizer"]["init_args"]
-        optimizer.zero_grad()
+        opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
+        lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
+        optimizer = configure_optimizers(retriever,opt_params,lrs_params)
         criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
             input_ids = torch.tensor(batch["input_ids"]).to("cuda")
@@ -167,6 +173,9 @@ def train(args):
             #logging mechanism for loss
         #epoch wise loss logs here--
     
+    PATH ="./"
+    torch.save(retriever.state_dict(), PATH)
+    
     #Getting val results on Fact Retriever Module(Retriever + Question Classification):
     acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(val_dataloader, retriever, device)
     #log the metrics
@@ -180,9 +189,11 @@ def test(args):
         retriever = retriever.to(device)
         questionClassificationModel = QuestionClassification(config)
         questionClassificationModel = questionClassificationModel.to(device)
-        #model = BertSentClassifier(config)
-        model.load_state_dict(saved['model'])
-        #model = model.to(device)
+
+        retriever.load_state_dict(saved['questionClassificationModel'])
+        retriever.load_state_dict(saved['retriever'])
+        questionClassificationModel = questionClassificationModel.to(device)
+        retriever = retriever.to(device)
         print(f"load model from {args.filepath}")
         
         #get the dataset and dataloaders
@@ -194,6 +205,23 @@ def test(args):
             for t, p in zip( test_true, test_pred):
                 f.write(f"{t} ||| {p}\n")
 
+def configure_optimizers(model,opt_params,lrs_params):
+    optimizer = AdamW(model.parameters(), **opt_params)
+    if lrs_params["name"] == "cosine":
+        lr_scheduler = get_cosine_schedule_with_warmup(optimizer, **lrs_params["init_args"])
+    elif lrs_params["name"] == "linear":
+        lr_scheduler = get_linear_schedule_with_warmup(optimizer, **lrs_params["init_args"])
+    elif lrs_params["name"] == "constant":
+        lr_scheduler = get_constant_schedule_with_warmup(optimizer, **lrs_params["init_args"])
+    else:
+        raise ValueError(f"lr_scheduler {lrs_params} is not supported")
+
+    return {"optimizer": optimizer, 
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "step"
+                }
+            }
 
 #change the args according to need
 def get_args():
@@ -222,7 +250,7 @@ def get_args():
 
 if __name__ == "__main__":
     args = get_args()
-    args.filepath = f'{args.option}-{args.epochs}-{args.lr}.pt' # save path
+    #args.filepath = f'{args.option}-{args.epochs}-{args.lr}.pt' # save path
     seed_everything(args.seed)  # fix the seed for reproducibility
     train(args)
     test(args)
