@@ -7,6 +7,15 @@ from model.program_generation import ProgramGeneration
 from model.span_selection import SpanSelection
 import yaml
 import constants
+import time, random, numpy as np, argparse, sys, re, os
+from torch.cuda import device_count
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
+from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
+from transformers.optimization import get_cosine_schedule_with_warmup
+from tqdm import tqdm
+
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -20,20 +29,29 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 def model_eval(dataloader, model, device):
-    #model.eval() # switch to eval model, will turn off randomness like dropout
+    model.eval() # switch to eval model, will turn off randomness like dropout
+    
     for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
-        dic = pg_model.validation() 
+        input_ids = torch.tensor(batch["input_ids"]).to("cuda")
+        attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
+        label_ids = torch.tensor(batch["label_ids"]).to("cuda")
+        dic = model(batch) 
         #logging mechanism for loss
+    f1 = f1_score(batch["labels"], dic["preds"], average='macro')
+    acc = accuracy_score(batch["labels"], dic["preds"])
 
+    return acc, f1, dic["labels"], dic["labels"]
+
+def model_eval(dataloader, model, device):
     for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
-        dic = span_model.validation()
+        dic = model(batch)
         #logging mechanism for loss
         #outputs a dictionary.. Need to deal with it
     
     #try to use inbuilt test and predict functions
     
     f1 = f1_score(batch["labels"], dic["preds"], average='macro')
-    acc = accuracy_score(y_true, y_pred)
+    acc = accuracy_score(batch["labels"], dic["preds"])
 
     return acc, f1, dic["labels"], dic["labels"]
 
@@ -74,7 +92,7 @@ def train(args):
             #logging mechanism for loss
             #update optimizer, backpropagation
 
-  def test():
+def test():
     z = model_eval(dataloader, model, device)
     # logging mechanism for z
     #Getting results on Fact Retriever Module(Retriever + Question Classification):
