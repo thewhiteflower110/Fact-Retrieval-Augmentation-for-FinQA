@@ -1,13 +1,14 @@
-import time, random, numpy as np, argparse, sys, re, os
-from types import SimpleNamespace
+#import time, random, numpy as np, argparse, sys, re, os
+#from types import SimpleNamespace
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
+#from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
 #from bert import BertModel
-#from optimizer import AdamW
+from optimizer import AdamW
 from tqdm import tqdm
 from model.fact_retriever import RetrieverModel
+from model.question_classification import QuestionClassification
 import yaml
 import constants
 
@@ -24,30 +25,23 @@ def seed_everything(seed=11711):
 
 # perform model evaluation in terms of the accuracy and f1 score.
 def model_eval(dataloader, model, device):
-    model.eval() # switch to eval model, will turn off randomness like dropout
-    y_true = []
-    y_pred = []
-    sents = []
-    for step, batch in enumerate(tqdm(dataloader, desc=f'eval', disable=TQDM_DISABLE)):
-        b_ids, b_type_ids, b_mask, b_labels, b_sents = batch[0]['token_ids'], batch[0]['token_type_ids'], \
-                                                       batch[0]['attention_mask'], batch[0]['labels'], batch[0]['sents']
+    #model.eval() # switch to eval model, will turn off randomness like dropout
+    
+    #try to use inbuilt test and predict functions
+    #Getting results on Fact Retriever Module:
+    for step, batch in enumerate(tqdm(val_dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
+        dic = retriever.validation()
+        sents = batch["examples"]
+        #dic {"preds": preds, "labels": labels, "uids": uids}
 
-        b_ids = b_ids.to(device)
-        b_mask = b_mask.to(device)
-
-        logits = model(b_ids, b_mask)
-        logits = logits.detach().cpu().numpy()
-        preds = np.argmax(logits, axis=1).flatten()
-
-        b_labels = b_labels.flatten()
-        y_true.extend(b_labels)
-        y_pred.extend(preds)
-        sents.extend(b_sents)
-
-    f1 = f1_score(y_true, y_pred, average='macro')
+    for step, batch in enumerate(tqdm(val_dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
+        batch_loss = questionClassificationModel.validation()
+      #logging mechanism for loss
+      #outputs a dictionary.. Need to deal with it
+    f1 = f1_score(dic["labels"], dic["preds"], average='macro')
     acc = accuracy_score(y_true, y_pred)
 
-    return acc, f1, y_pred, y_true, sents
+    return acc, f1, dic["labels"], dic["labels"], sents
 
 def save_model(model, optimizer, args, config, filepath):
     save_info = {
@@ -88,24 +82,54 @@ def train(args):
     #question classification config
     qc_config = yaml.load(open(constants.qc_config))
     config = qc_config["model"]["init_args"]
-    retriever = RetrieverModel(config)
-    retriever = retriever.to(device)
-
-    for epoch in range(args.epochs):
-      retriever_train_loss = retriever.train()
-
+    questionClassificationModel = QuestionClassification(config)
+    questionClassificationModel = questionClassificationModel.to(device)
 
     lr = args.lr
     ## specify the optimizer
     optimizer = AdamW(model.parameters(), lr=lr)
     best_dev_acc = 0
 
+    #Note: make this parallel
+    #Finetune the Retriever Model
+    for epoch in range(args.epochs):
+        train_loss = 0
+        num_batches = 0
+        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            batch_loss = retriever.train()
+            #logging mechanism for loss
+            #updat optimizer, backpropagation
+
+    #Note: make this parallel
+    #Finetune the Question Classification Model
+    for epoch in range(args.epochs):
+        train_loss = 0
+        num_batches = 0
+        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            batch_loss = questionClassificationModel.train()
+            #logging mechanism for loss
+            #update optimizer, backpropagation
+
+    #Getting results on Fact Retriever Module(Retriever + Question Classification):
+    #evaluate/predict using test set
+    for step, batch in enumerate(tqdm(val_dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
+            batch_loss = retriever.validation()
+
+    for step, batch in enumerate(tqdm(val_dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
+            batch_loss = questionClassificationModel.validation()
+            #logging mechanism for loss
+            #outputs a dictionary.. Need to deal with it
+
+    '''
     ## run for the specified number of epochs
     for epoch in range(args.epochs):
         model.train()
         train_loss = 0
         num_batches = 0
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
+            #Fact Retrieveing Module : Training stage.
+            logits = retriever(batch) #forward or train?
+            #get the loss and pass it to retirever to finetune it, as 
             b_ids, b_type_ids, b_mask, b_labels, b_sents = batch[0]['token_ids'], batch[0]['token_type_ids'], batch[0][
                 'attention_mask'], batch[0]['labels'], batch[0]['sents']
 
@@ -133,7 +157,7 @@ def train(args):
             save_model(model, optimizer, args, config, args.filepath)
 
         print(f"epoch {epoch}: train loss :: {train_loss :.3f}, train acc :: {train_acc :.3f}, dev acc :: {dev_acc :.3f}")
-
+        '''
 
 def test(args):
     with torch.no_grad():
@@ -166,6 +190,7 @@ def test(args):
                 f.write(f"{s} ||| {t} ||| {p}\n")
 
 
+#change the args according to need
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
