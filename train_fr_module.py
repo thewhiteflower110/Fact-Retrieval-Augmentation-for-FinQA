@@ -1,9 +1,10 @@
-#import time, random, numpy as np, argparse, sys, re, os
+import time, random, numpy as np, argparse, sys, re, os
 #from types import SimpleNamespace
 import torch
+from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-#from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
+from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
 #from bert import BertModel
 from optimizer import AdamW
 from tqdm import tqdm
@@ -91,25 +92,51 @@ def train(args):
     best_dev_acc = 0
 
     #Note: make this parallel
-    #Finetune the Retriever Model
+    #Finetune the Question Classification Model
     for epoch in range(args.epochs):
+        #this loop discard the .train() method
         train_loss = 0
         num_batches = 0
-        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
-            batch_loss = retriever.train()
+        optimizer = qc_config["model"]["optimizer"]["init_args"]
+        optimizer.zero_grad()
+        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
+            input_ids = torch.tensor(batch["input_ids"]).to("cuda")
+            attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
+            labels = torch.tensor(batch["labels"]).to("cuda")
+            outputs = questionClassificationModel.train() #intuitively calling the forward method
+            loss = outputs.loss
+            loss.backward()
+            # Adjust learning weights
+            optimizer.step()
             #logging mechanism for loss
-            #updat optimizer, backpropagation
+        #epoch wise loss logs here--
 
     #Note: make this parallel
     #Finetune the Question Classification Model
     for epoch in range(args.epochs):
+        #this loop discard the .train() method
         train_loss = 0
         num_batches = 0
-        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):
-            batch_loss = questionClassificationModel.train()
+        optimizer = retriever_config["model"]["optimizer"]["init_args"]
+        optimizer.zero_grad()
+        criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
+        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
+            input_ids = torch.tensor(batch["input_ids"]).to("cuda")
+            attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
+            labels = torch.tensor(batch["labels"]).to("cuda")
+            output_dicts = retriever.train() #intuitively calling the forward method
+            logits = []
+            for output_dict in output_dicts:
+                logits.append(output_dict["logits"])
+            logits = torch.stack(logits)
+            loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
+            total_loss = loss.sum()
+            total_loss.backward()
+            # Adjust learning weights
+            optimizer.step()
             #logging mechanism for loss
-            #update optimizer, backpropagation
-
+        #epoch wise loss logs here--
+    
     #Getting results on Fact Retriever Module(Retriever + Question Classification):
     #evaluate/predict using test set
     for step, batch in enumerate(tqdm(val_dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
