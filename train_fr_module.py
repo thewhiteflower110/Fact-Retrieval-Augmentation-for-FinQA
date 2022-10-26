@@ -1,13 +1,10 @@
 import time, random, numpy as np, argparse, sys, re, os
-#from types import SimpleNamespace
 import torch
 from torch import nn
 from torch.cuda import device_count
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
-#from bert import BertModel
-#from optimizer import AdamW
 from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
 from transformers.optimization import get_cosine_schedule_with_warmup
 from tqdm import tqdm
@@ -144,18 +141,19 @@ def train(args):
         #scheduler.step()
         acc, f1, y_true, y_preds, avg_loss = qc_model_eval(val_dataloader, questionClassificationModel, device)
 
-    PATH ="./"
-    torch.save(questionClassificationModel.state_dict(), PATH)
+    filepath="./"
+    save_model(questionClassificationModel, optimizer, qc_config, filepath)
+
     #Note: make this parallel
     #Finetune the Question Classification Model
+    opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
+    lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
+    optimizer = configure_optimizers(retriever,opt_params,lrs_params)
+    criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
         num_batches = 0
-        opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
-        lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
-        optimizer = configure_optimizers(retriever,opt_params,lrs_params)
-        criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
             input_ids = torch.tensor(batch["input_ids"]).to("cuda")
             attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -173,8 +171,8 @@ def train(args):
             #logging mechanism for loss
         #epoch wise loss logs here--
     
-    PATH ="./"
-    torch.save(retriever.state_dict(), PATH)
+    filepath="./"
+    save_model(retriever, optimizer, retriever_config, filepath)
     
     #Getting val results on Fact Retriever Module(Retriever + Question Classification):
     acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(val_dataloader, retriever, device)
