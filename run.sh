@@ -1,4 +1,9 @@
 pwd Fact-Retrieval-Augmentation-for-FinQA/
+# Installing requirements
 python3 setup.py install
-python3 train_fr_module.py --option pretrain --epochs 10 --lr 1e-3 --train data/cfimdb-train.txt --dev data/cfimdb-dev.txt --test data/cfimdb-test.txt --dev_out "cfimdb-dev-output.txt" --test_out "cfimdb-test-output.txt" --use_gpu
+# Finetuning Fact Retrieval Module with table-> text data
+python3 train_fr_module.py 
+#Converting output of Fact Retrieval Module to input of Reasoning Module
 python3 convert_fr_outputs.py
+#Training Reasonging Module
+python3 train_reasoning_module.py
