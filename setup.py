@@ -16,6 +16,6 @@ setup(
         'torchvision==0.12.0',
         'tqdm==4.64.0',
         'transformers>=4.20.1',
-        'huggingface-hub==0.8.1'
+        'huggingface-hub>=0.10.1'
     ]
 )

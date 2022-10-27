@@ -7,37 +7,19 @@ from transformers.optimization import get_cosine_schedule_with_warmup
 #from torch.utils.tensorboard import SummaryWriter
 
 
-class QuestionClassification:    
-    def __init__(self,given_model,warmup_steps,optimizer,lr_scheduler):
-        '''
-        Metrics in the paper--->
-        topn: 10
-        dropout_rate: 0.1
-        optimizer:
-        init_args: 
-            lr: 2.0e-5
-            betas: 
-            - 0.9
-            - 0.999
-            eps: 1.0e-8
-            weight_decay: 0.1
-        lr_scheduler:
-        name: linear
-        init_args:
-            num_warmup_steps: 100
-            num_training_steps: 10000
-
-        '''
-        self.model_config = AutoConfig.from_pretrained(given_model, num_labels=2)
-        self.model = AutoModelForSequenceClassification.from_pretrained(given_model, config=self.model_config)
+class QuestionClassification(nn.Module):    
+    def __init__(self,config):
+        super(QuestionClassification, self).__init__()
+        self.model_config = AutoConfig.from_pretrained(config["model_name"], num_labels=2)
+        self.model = AutoModelForSequenceClassification.from_pretrained(config["model_name"], config=self.model_config)
         #self.metric = datasets.load_metric('precision')        
-        self.warmup_steps = warmup_steps
-        self.opt_params = optimizer["init_args"]
-        self.lrs_params = lr_scheduler
-    
+        self.warmup_steps = config["lr_scheduler"]["init_args"]["num_warmup_steps"]
+        self.opt_params = config["optimizer"]["init_args"]
+        self.lrs_params = config["lr_scheduler"]
+
     def forward(self, **inputs) -> List[Dict[str, Any]]:
         return self.model(**inputs)
-
+    
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
         attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -46,6 +28,7 @@ class QuestionClassification:
         outputs = self(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
         loss = outputs.loss
         #self.log("loss", loss, on_step=True, on_epoch=True)
+        
         return loss
 
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
@@ -64,10 +47,10 @@ class QuestionClassification:
         uids = batch["uid"]
         
         return {"preds": preds, "labels": labels, "uids": uids}
-    '''
-    def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> Dict[str, torch.Tensor]:
-        return self.validation_step(batch, batch_idx)
-    '''
+    
+    #def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> Dict[str, torch.Tensor]:
+    #    return self.validation_step(batch, batch_idx)
+    
 
     def predict(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
