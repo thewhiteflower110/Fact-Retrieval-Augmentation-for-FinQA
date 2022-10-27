@@ -19,7 +19,7 @@ class QuestionClassification(nn.Module):
 
     def forward(self, **inputs) -> List[Dict[str, Any]]:
         return self.model(**inputs)
-    
+    # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
         attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -30,7 +30,7 @@ class QuestionClassification(nn.Module):
         #self.log("loss", loss, on_step=True, on_epoch=True)
         
         return loss
-
+    # Depricated Method
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
         attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -51,7 +51,7 @@ class QuestionClassification(nn.Module):
     #def test_step(self, batch: Dict[str, torch.Tensor], batch_idx: int) -> Dict[str, torch.Tensor]:
     #    return self.validation_step(batch, batch_idx)
     
-
+    # Depricated Method
     def predict(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
         attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -65,6 +65,7 @@ class QuestionClassification(nn.Module):
         return {"preds": preds, "uids": uids}
 
     '''
+    # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)
         if self.lrs_params["name"] == "cosine":
