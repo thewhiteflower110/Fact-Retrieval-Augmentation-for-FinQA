@@ -5,10 +5,14 @@ from torch.utils.tensorboard import SummaryWriter
 # default `log_dir` is "runs" - we'll be more specific here
 writer = SummaryWriter('runs/fashion_mnist_experiment_1')
 
-def train_log(dict):
-    writer.add_scalar('training loss',dict["loss"])
-    writer.add_scalar("Loss/train", loss, epoch)
-
-def val_log(dict):
+def train_log(loss, accuracy):
+    for l, a, e in zip(loss, accuracy, range(len(loss))):
+        writer.add_scalar("Training/loss", l, e)
+        writer.add_scalar("Training/accuracy", a, e)
+        
+def val_log(loss, accuracy):
+    for l, a, e in zip(loss, accuracy, range(len(loss))):
+        writer.add_scalar("Validation/loss", l, e)
+        writer.add_scalar("Validation/accuracy", a, e)
 
 writer.add_figure('validation loss',)
