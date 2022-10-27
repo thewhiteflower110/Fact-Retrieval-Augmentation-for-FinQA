@@ -48,7 +48,7 @@ class RetrieverModel:
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "filename_id": metadata[i]["filename_id"], "ind": metadata[i]["ind"]})
         return output_dicts
-
+    # Depricated Method
     def predict(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
         input_ids = batch["input_ids"]
@@ -61,7 +61,7 @@ class RetrieverModel:
         metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
         output_dicts = self.forward(input_ids, attention_mask, segment_ids, metadata)
         return output_dicts
-
+    # Depricated Method
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
         labels = batch["label"]
@@ -76,7 +76,7 @@ class RetrieverModel:
         #log is in pytorch lightening
         self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return output_dicts
-
+    # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         output_dicts = self.predict(batch)
         labels = batch["label"]
@@ -91,9 +91,10 @@ class RetrieverModel:
         self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss.sum()}
     '''
+    # Depricated Method
     def predict_step_end(self, outputs: List[Dict[str, Any]]) -> None:
         self.predictions.extend(outputs)
-
+    # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)
         if self.lrs_params["name"] == "cosine":
