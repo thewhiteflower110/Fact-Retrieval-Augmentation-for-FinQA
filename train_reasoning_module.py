@@ -86,6 +86,12 @@ def save_model(model, optimizer, config, filepath):
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
+writer = SummaryWriter('runs/Reasoning Module')
+
+def train_log(dict):
+    writer.add_scalar("Loss/train", dict["loss"])
+    writer.add_scalar("Loss/Val", dict["val_loss"], epoch)
+
 def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     with open(constants.pg_config, 'r') as file:
@@ -132,9 +138,12 @@ def train(args):
             loss = criterion(logits.view(-1, logits.shape[-1]), program_ids.view(-1))
             loss = loss * program_mask.view(-1)
             #logging mechanism for loss
+            train_log({"loss":loss, "epoch":epoch})
+            train_loss += loss
             loss.backward()
             optimizer.step()
         loss = pg_model_eval(val_dataloader,pg_model,device)
+        train_log({"val_loss":loss, "epoch":epoch})
         # logging mechanism for loss
       #epoch logs here --
     filepath="./"
@@ -197,11 +206,34 @@ def configure_optimizers(model,opt_params,lrs_params):
                 }
             }
 
+#change the args according to need
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
+    parser.add_argument("--dev", type=str, default="data/cfimdb-dev.txt")
+    parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
+    parser.add_argument("--seed", type=int, default=11711)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--option", type=str,
+                        help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
+                        choices=('pretrain', 'finetune'), default="pretrain")
+    parser.add_argument("--use_gpu", action='store_true')
+    parser.add_argument("--dev_out", type=str, default="cfimdb-dev-output.txt")
+    parser.add_argument("--test_out", type=str, default="cfimdb-test-output.txt")
 
+    # hyper parameters
+    parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
+    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
+    parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
+                        default=1e-5)
 
+    args = parser.parse_args()
+    print(f"args: {vars(args)}")
+    return args
 
-
-
-
-
-
+if __name__ == "__main__":
+    args = get_args()
+    #args.filepath = f'{args.option}-{args.epochs}-{args.lr}.pt' # save path
+    seed_everything(args.seed)  # fix the seed for reproducibility
+    train(args)
+    test(args)
