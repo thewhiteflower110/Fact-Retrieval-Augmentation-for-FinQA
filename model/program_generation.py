@@ -264,7 +264,7 @@ class ProgramGeneration:
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "unique_id": metadata[i]["unique_id"]})
         return output_dicts
-
+    # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = batch["input_ids"]
         input_mask = batch["input_mask"]
@@ -290,7 +290,7 @@ class ProgramGeneration:
         
         #self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss.sum()}
-    
+    # Depricated Method
     def validation(self, batch: torch.Tensor):
         input_ids = batch["input_ids"]
         input_mask = batch["input_mask"]
@@ -313,7 +313,7 @@ class ProgramGeneration:
         loss = self.criterion(logits.view(-1, logits.shape[-1]), program_ids.view(-1))
         #self.log("val_loss", loss)
         return output_dicts
-
+    # Depricated Method
     def predict(self, batch: torch.Tensor):
         input_ids = batch["input_ids"]
         input_mask = batch["input_mask"]
@@ -327,6 +327,7 @@ class ProgramGeneration:
         return output_dicts
     
     '''   
+    # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)
         if self.lrs_params["name"] == "cosine":
