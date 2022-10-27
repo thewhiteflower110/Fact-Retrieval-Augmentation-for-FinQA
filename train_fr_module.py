@@ -83,8 +83,11 @@ def save_model(model, optimizer, args, config, filepath):
     torch.save(save_info, filepath)
     print(f"save the model to {filepath}")
 
-def model_save():
-    pass
+writer = SummaryWriter('runs/Fact Retriever Module')
+
+def train_log(dict):
+    writer.add_scalar("Loss/train", dict["loss"])
+    writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
 
 def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
@@ -133,6 +136,8 @@ def train(args):
             labels = torch.tensor(batch["labels"]).to("cuda")
             outputs = questionClassificationModel.train() #intuitively calling the forward method
             loss = outputs.loss
+            train_loss+=loss
+            train_log({"loss":loss, "epoch":epoch})
             loss.backward()
             # Adjust learning weights
             optimizer.step()
@@ -140,7 +145,7 @@ def train(args):
         #epoch wise loss logs here--
         #scheduler.step()
         acc, f1, y_true, y_preds, avg_loss = qc_model_eval(val_dataloader, questionClassificationModel, device)
-
+        train_log({"val_loss":avg_loss, "epoch":epoch})
     filepath="./"
     save_model(questionClassificationModel, optimizer, qc_config, filepath)
 
@@ -166,6 +171,8 @@ def train(args):
             loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
             total_loss = loss.sum()
             total_loss.backward()
+            train_loss+=total_loss
+            train_log({"loss":total_loss, "epoch":epoch})
             # Adjust learning weights
             optimizer.step()
             #logging mechanism for loss
@@ -176,6 +183,7 @@ def train(args):
     
     #Getting val results on Fact Retriever Module(Retriever + Question Classification):
     acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(val_dataloader, retriever, device)
+    train_log({"val_loss":avg_loss, "epoch":epoch})
     #log the metrics
 
 def test(args):
