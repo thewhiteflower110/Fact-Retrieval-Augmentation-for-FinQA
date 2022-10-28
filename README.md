@@ -25,7 +25,7 @@ sh run.sh
 ```
 
 The dataset is stored as json files, each entry has the following format:
-
+```
 "uid": unique example id;
 "paragraphs": the list of sentences in the document;
 "tables": the list of tables in HTML format in the document;
@@ -37,3 +37,4 @@ The dataset is stored as json files, each entry has the following format:
   "text_evidence": the list of indices of gold supporting text facts;
   "table_evidence": the list of indices of gold supporting table facts;
 }
+```
