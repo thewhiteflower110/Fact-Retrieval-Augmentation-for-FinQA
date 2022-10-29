@@ -61,6 +61,7 @@ class RetrieverModel:
         metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
         output_dicts = self.forward(input_ids, attention_mask, segment_ids, metadata)
         return output_dicts
+    '''
     # Depricated Method
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
@@ -90,7 +91,7 @@ class RetrieverModel:
         #log is in pytorch lightening
         self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss.sum()}
-    '''
+    
     # Depricated Method
     def predict_step_end(self, outputs: List[Dict[str, Any]]) -> None:
         self.predictions.extend(outputs)
