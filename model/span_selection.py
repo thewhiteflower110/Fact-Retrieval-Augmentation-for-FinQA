@@ -16,6 +16,7 @@ class SpanSelection:
         #self.writer = SummaryWriter()
         self.predictions = []
 
+    # How do we get the actual span selection from this? Is this incomplete?
     def forward(self, input_ids, attention_mask, label_ids) -> List[Dict[str, Any]]:
         input_ids = torch.tensor(input_ids).to("cuda")
         attention_mask = torch.tensor(attention_mask).to("cuda")
@@ -24,7 +25,9 @@ class SpanSelection:
         loss = self.model(
             input_ids=input_ids, attention_mask=attention_mask, labels = label_ids).get("loss")
         return {"loss": loss}
+
     '''
+
     # Depricated Method
     def train(self, batch: torch.Tensor)-> List[Dict[str, Any]]:
         #def train(self, input_ids, attention_mask, label_ids) -> List[Dict[str, Any]]:
@@ -40,6 +43,7 @@ class SpanSelection:
         #self.writer.add_scalar("Loss/train", loss)
         #self.log("loss", loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss}
+    
     # Depricated Method
     def validation(self, batch: torch.Tensor):
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
@@ -69,6 +73,7 @@ class SpanSelection:
         #self.writer.add_scalar("Loss/valid", loss)
         #self.log("val_loss", loss)
         return output_dict
+    
     # Depricated Method
     def predict(self, batch: torch.Tensor):
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")

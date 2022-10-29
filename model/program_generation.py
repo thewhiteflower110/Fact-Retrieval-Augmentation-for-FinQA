@@ -27,7 +27,8 @@ class ProgramGeneration:
 
         self.sep_attention = sep_attention
         self.layer_norm = layer_norm
-        
+
+        # self.reserved_ind are untrainable parameters indexing possible operations
         self.reserved_ind = nn.Parameter(torch.arange(0, self.reserved_token_size), requires_grad=False)
         self.reserved_go = nn.Parameter(torch.arange(op_list.index('GO'), op_list.index('GO') + 1), requires_grad=False)
         self.reserved_para = nn.Parameter(torch.arange(op_list.index(')'), op_list.index(')') + 1), requires_grad=False)
@@ -112,7 +113,8 @@ class ProgramGeneration:
         option_mask = torch.tensor(option_mask).to("cuda")
         program_ids = torch.tensor(program_ids).to("cuda")
         program_mask = torch.tensor(program_mask).to("cuda")
-        
+
+        # BERT-LM gets the encodings of the concatenated question + top-n retrieved facts
         bert_outputs = self.model(
             input_ids=input_ids, attention_mask=input_mask, token_type_ids=segment_ids)
         bert_sequence_output = bert_outputs.last_hidden_state
@@ -126,42 +128,57 @@ class ProgramGeneration:
         op_embeddings = self.reserved_token_embedding(self.reserved_ind)
         op_embeddings = op_embeddings.repeat(batch_size, 1, 1)
 
-        #Initiallizing decoder output
+        # Initializing decoder output by setting its values to a 'GO' token which signals that this
+        #  operation has yet to be decided.
         init_decoder_output = self.reserved_token_embedding(self.reserved_go)
         decoder_output = init_decoder_output.repeat(batch_size, 1, 1)
 
         logits = []
         
         # [batch, op + seq len, hidden]
+        # These embeddings represent the possible operations *and facts* available to be used
+        #  in the final program. op_embeddings represents the operations, sequence_output
+        #  are the LM encodings of the facts (and therefore the literal values) from the
+        #  fact retrieval model.
         initial_option_embeddings = torch.cat([op_embeddings, sequence_output], dim=1)
 
+        # Decoder_history will represent the sequence of tokens already output by
+        #  the LSTM decoder. If 'sep_attention', this is initialized as the special
+        #  token embeddings. Else, it is the pooled encoding of the Retriever output.
         if self.sep_attention:
             decoder_history = decoder_output
         else:
             decoder_history = torch.unsqueeze(pooled_output, dim=-1)
 
+        # LSTM decoder states initialized zero.
         decoder_state_h = torch.zeros(1, batch_size, self.hidden_size, device = "cuda")
         decoder_state_c = torch.zeros(1, batch_size, self.hidden_size, device = "cuda")
 
         float_input_mask = input_mask.float()
         float_input_mask = torch.unsqueeze(float_input_mask, dim=-1)
 
+        # Variable instantiated to represented available fact and operator choices for the
+        #  current step. Initialized to be all possible facts and operators.
         this_step_new_op_emb = initial_option_embeddings
 
         for cur_step in range(self.program_length):
 
-            # decoder history att
+            # decoder history attn, attends over existing decoder history to decide
+            #  next fact or operator
             decoder_history_attn_vec = self.history_attention(decoder_output)
             
-            #getting weights by applying attention vector
+            # Weights to be applied to the decoder history, acquired from the attention vector
             decoder_history_attn_w = torch.matmul(decoder_history, torch.transpose(decoder_history_attn_vec, 1, 2))
             decoder_history_attn_w = F.softmax(decoder_history_attn_w, dim=1)
 
+            # "context" embeddings, the decoder_history weighted by the attention vector
+            #  computed above.
             decoder_history_ctx_embeddings = torch.matmul(
                 torch.transpose(decoder_history_attn_w, 1, 2), decoder_history)
         
             if self.sep_attention:
-                # decoder seq att (attends to input question)
+                # decoder sequence attn (attends over input question)
+                #  Steps are similar to above, limited to question input instead
                 question_attn_vec = self.input_question_attn(decoder_output)
 
                 question_attn_w = torch.matmul(sequence_output, torch.transpose(question_attn_vec, 1, 2))
@@ -171,6 +188,7 @@ class ProgramGeneration:
                 question_ctx_embeddings = torch.matmul(torch.transpose(question_attn_w, 1, 2), sequence_output)
 
             # decoder seq att (attends to question summary)
+            #  Another attention sequence, similar to above.
             question_summary_vec = self.question_summary_attention(
                 decoder_output)
 
@@ -188,10 +206,10 @@ class ProgramGeneration:
                 concat_input_embeddings = torch.cat([decoder_history_ctx_embeddings,
                                                      decoder_output], dim=-1)
             
-            #Linear layer conditioned to act according to seq attention
+            # Linear layer conditioned to act according to seq attention
             input_embeddings = self.input_embeddings_prj(concat_input_embeddings)
 
-            #applying layer norm
+            # applying layer norm
             if self.layer_norm:
                 input_embeddings = self.input_embeddings_layernorm(input_embeddings)
             
@@ -252,6 +270,8 @@ class ProgramGeneration:
             input_program_embeddings = torch.gather(
                 option_embeddings, dim=1, index=program_index)
 
+            # Feeds embeddings computed above and the last decoder state into the current
+            #  RNN cell. Decoder_history accumulates the embeddings for this step.
             decoder_output, (decoder_state_h, decoder_state_c) = self.rnn(
                 input_program_embeddings, (decoder_state_h, decoder_state_c))
             decoder_history = torch.cat(
@@ -264,7 +284,10 @@ class ProgramGeneration:
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "unique_id": metadata[i]["unique_id"]})
         return output_dicts
+
+    
     '''
+
     # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = batch["input_ids"]
@@ -291,6 +314,7 @@ class ProgramGeneration:
         
         #self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss.sum()}
+    
     # Depricated Method
     def validation(self, batch: torch.Tensor):
         input_ids = batch["input_ids"]
@@ -314,6 +338,7 @@ class ProgramGeneration:
         loss = self.criterion(logits.view(-1, logits.shape[-1]), program_ids.view(-1))
         #self.log("val_loss", loss)
         return output_dicts
+    
     # Depricated Method
     def predict(self, batch: torch.Tensor):
         input_ids = batch["input_ids"]

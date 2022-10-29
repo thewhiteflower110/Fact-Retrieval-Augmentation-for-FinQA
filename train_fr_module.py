@@ -25,6 +25,8 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.deterministic = True
 
 # perform model evaluation in terms of the accuracy and f1 score.
+#  Accuracy and F1 score are not the most useful metrics here. Instead we'll want Top-N
+#  retrieved accuracy.
 def retriever_model_eval(dataloader, retriever, device):
     retriever.eval() # switch to eval model, will turn off randomness like dropout
     final_loss = 0
@@ -49,6 +51,8 @@ def retriever_model_eval(dataloader, retriever, device):
 
     return acc, f1, output_dicts["labels"], output_dicts["preds"], avg_final_loss
 
+# Is there a way to retrieve the actual operations here? That could be an important part
+#  of error analysis.
 def qc_model_eval(dataloader, questionClassificationModel, device):
     questionClassificationModel.eval()
     #try to use inbuilt test and predict functions
@@ -105,7 +109,7 @@ def train(args):
     #                            collate_fn=dev_dataset.collate_fn)
 
     #### Init model
-
+    # Initiate and configure retriever
     with open(constants.retriever_config, 'r') as file:
         retriever_config = yaml.safe_load(file)    
     config = retriever_config["model"]["init_args"]
@@ -144,13 +148,16 @@ def train(args):
             #logging mechanism for loss
         #epoch wise loss logs here--
         #scheduler.step()
+        
+        # Double-check; are these the actual outputs of the QC model? Aren't there
+        #  several different accuracy measures for that model?
         acc, f1, y_true, y_preds, avg_loss = qc_model_eval(val_dataloader, questionClassificationModel, device)
         train_log({"val_loss":avg_loss, "epoch":epoch})
     filepath="./"
     save_model(questionClassificationModel, optimizer, qc_config, filepath)
 
     #Note: make this parallel
-    #Finetune the Question Classification Model
+    #Finetune the Retriever Model
     opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
     lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
     optimizer = configure_optimizers(retriever,opt_params,lrs_params)
@@ -186,6 +193,8 @@ def train(args):
     train_log({"val_loss":avg_loss, "epoch":epoch})
     #log the metrics
 
+# Why group the fact retriever and the question classification module together like this?
+#  The QC model is a subsection of the Reasoning Module.
 def test(args):
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
@@ -203,6 +212,8 @@ def test(args):
         print(f"load model from {args.filepath}")
         
         #get the dataset and dataloaders
+        # Need to know what the type and origin of "test_dataloader" is? Is it a function?
+        #  An iterable dict? A numpy array? Where is it's value set?
         qc_acc, qc_f1, qc_y_true, qc_y_preds, qc_avg_loss = qc_model_eval(test_dataloader, questionClassificationModel, device)
         retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device)
         
