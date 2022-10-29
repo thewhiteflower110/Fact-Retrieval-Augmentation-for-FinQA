@@ -19,7 +19,8 @@ class QuestionClassification(nn.Module):
 
     def forward(self, **inputs) -> List[Dict[str, Any]]:
         return self.model(**inputs)
-    
+    '''
+
     # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
@@ -66,7 +67,7 @@ class QuestionClassification(nn.Module):
         
         return {"preds": preds, "uids": uids}
 
-    '''
+    
     # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)

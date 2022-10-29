@@ -25,7 +25,9 @@ class SpanSelection:
         loss = self.model(
             input_ids=input_ids, attention_mask=attention_mask, labels = label_ids).get("loss")
         return {"loss": loss}
-    
+
+    '''
+
     # Depricated Method
     def train(self, batch: torch.Tensor)-> List[Dict[str, Any]]:
         #def train(self, input_ids, attention_mask, label_ids) -> List[Dict[str, Any]]:
@@ -92,7 +94,7 @@ class SpanSelection:
             output_dict.append({"uid": unique_id, "preds": preds[i]})
         return output_dict
 
-    '''
+    
     # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)

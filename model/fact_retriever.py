@@ -70,6 +70,9 @@ class RetrieverModel:
     
     # Deprecated Method; again, why is this deprecated? Is it because we don't have annotations
     #  in the data for it?
+    '''
+    # Depricated Method
+
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
         labels = batch["label"]
@@ -99,7 +102,7 @@ class RetrieverModel:
         #log is in pytorch lightening
         self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return {"loss": loss.sum()}
-    '''
+    
     # Depricated Method
     def predict_step_end(self, outputs: List[Dict[str, Any]]) -> None:
         self.predictions.extend(outputs)
