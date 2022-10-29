@@ -264,6 +264,7 @@ class ProgramGeneration:
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "unique_id": metadata[i]["unique_id"]})
         return output_dicts
+    '''
     # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = batch["input_ids"]
@@ -326,7 +327,7 @@ class ProgramGeneration:
         output_dicts = self(is_training, input_ids, input_mask, segment_ids, option_mask, program_ids, program_mask, metadata)
         return output_dicts
     
-    '''   
+  
     # Depricated Method
     def configure_optimizers(self):
         optimizer = AdamW(self.parameters(), **self.opt_params)
