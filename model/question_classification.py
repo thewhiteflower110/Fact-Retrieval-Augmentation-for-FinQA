@@ -19,6 +19,7 @@ class QuestionClassification(nn.Module):
 
     def forward(self, **inputs) -> List[Dict[str, Any]]:
         return self.model(**inputs)
+    
     # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
@@ -30,6 +31,7 @@ class QuestionClassification(nn.Module):
         #self.log("loss", loss, on_step=True, on_epoch=True)
         
         return loss
+    
     # Depricated Method
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")

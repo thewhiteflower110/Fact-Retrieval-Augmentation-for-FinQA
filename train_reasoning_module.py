@@ -28,7 +28,8 @@ def seed_everything(seed=11711):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-
+# Need to double-check this evaluation; can we get the actual operations of the program?
+#  Can we check how many we got right out of the program length?
 def pg_model_eval(dataloader, model, device):
     model.eval() # switch to eval model, will turn off randomness like dropout
     criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
@@ -56,6 +57,7 @@ def pg_model_eval(dataloader, model, device):
     avg_total_loss = total_loss/step
     return avg_total_loss
 
+# Isn't the span slection a classifier model? Can we not use built-in test and predict methods?
 def span_selection_model_eval(dataloader, model, device):
     total_loss =0 
     for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):

@@ -19,6 +19,9 @@ class RetrieverModel:
         self.lrs_params = config["lr_scheduler"]
         #self.predictions = []
 
+        # Classifies whether a specific fact is relevant supporting info for the question
+        #  Facts that we want to retrieve should have highly positive logits,
+        #  facts that we want to ignore should have highly negative logits, ideally.
         self.classifier = nn.Sequential(
           nn.Linear(hidden_size, hidden_size, bias=True),
           nn.Dropout(self.dropout_rate),
@@ -31,7 +34,8 @@ class RetrieverModel:
         input_ids = torch.tensor(input_ids).to("cuda")
         attention_mask = torch.tensor(attention_mask).to("cuda")
         segment_ids = torch.tensor(segment_ids).to("cuda")
-        
+
+        # Get encodings from the Language Model
         bert_outputs = self.model(
             input_ids=input_ids, attention_mask=attention_mask, token_type_ids=segment_ids)
         
@@ -45,10 +49,12 @@ class RetrieverModel:
         #give individual outputs according to file. 
         # 1 means the file has important facts for the question
         output_dicts = []
+        # Can we get a format for the "metadata" written down somewhere? 
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "filename_id": metadata[i]["filename_id"], "ind": metadata[i]["ind"]})
         return output_dicts
-    # Depricated Method
+    
+    # Deprecated Method (why is this deprecated again?)
     def predict(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
         input_ids = batch["input_ids"]
@@ -61,7 +67,9 @@ class RetrieverModel:
         metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
         output_dicts = self.forward(input_ids, attention_mask, segment_ids, metadata)
         return output_dicts
-    # Depricated Method
+    
+    # Deprecated Method; again, why is this deprecated? Is it because we don't have annotations
+    #  in the data for it?
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
         labels = batch["label"]
@@ -76,6 +84,7 @@ class RetrieverModel:
         #log is in pytorch lightening
         self.log("loss", loss.sum(), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return output_dicts
+    
     # Depricated Method
     def train(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         output_dicts = self.predict(batch)
