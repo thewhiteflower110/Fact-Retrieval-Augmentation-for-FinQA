@@ -165,13 +165,13 @@ def train(args):
             data_ori,
             data,
             all_results,
-            n_best_size=args.n_best,
+            n_best_size=args.n_best)
             #max_program_length=self.program_length,
             #tokenizer=self.tokenizer,
-            op_list=op_list,
-            op_list_size=len(op_list),
-            const_list=const_list,
-            const_list_size=len(const_list))
+            #op_list=op_list,
+            #op_list_size=len(op_list),
+            #const_list=const_list,
+            #const_list_size=len(const_list))
         
     #Note: make this parallel
     #Finetune the Question Classification Model
@@ -236,20 +236,8 @@ def get_args():
     parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
     parser.add_argument("--dev", type=str, default="data/cfimdb-dev.txt")
     parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
-    parser.add_argument("--seed", type=int, default=11711)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--option", type=str,
-                        help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
-                        choices=('pretrain', 'finetune'), default="pretrain")
+    parser.add_argument("--n_best", type=int, default=5)
     parser.add_argument("--use_gpu", action='store_true')
-    parser.add_argument("--dev_out", type=str, default="cfimdb-dev-output.txt")
-    parser.add_argument("--test_out", type=str, default="cfimdb-test-output.txt")
-
-    # hyper parameters
-    parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-                        default=1e-5)
 
     args = parser.parse_args()
     print(f"args: {vars(args)}")
