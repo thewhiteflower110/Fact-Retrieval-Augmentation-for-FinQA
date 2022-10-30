@@ -15,6 +15,7 @@ from sklearn.metrics import classification_report, f1_score, recall_score, accur
 from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
 from transformers.optimization import get_cosine_schedule_with_warmup
 from tqdm import tqdm
+from post_pg import compute_predictions
 
 
 TQDM_DISABLE=True
@@ -114,6 +115,7 @@ def train(args):
     lrs_params = pg_config["model"]["init_args"]["lr_scheduler"]
     optimizer = configure_optimizers(pg_model,opt_params,lrs_params)
     criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
+    training_output_dicts = {}
     for epoch in range(args.epochs):
         train_loss = 0
         num_batches = 0
@@ -132,7 +134,7 @@ def train(args):
             metadata = [{"unique_id": filename_id} for filename_id in batch["unique_id"]]
             
             output_dicts = pg_model(is_training, input_ids, input_mask, segment_ids, option_mask, program_ids, program_mask, metadata)
-            
+            training_output_dicts.extend(output_dicts)
             logits = []
             for output_dict in output_dicts:
                 logits.append(output_dict["logits"])
@@ -150,7 +152,27 @@ def train(args):
       #epoch logs here --
     filepath="./"
     save_model(pg_model, optimizer, pg_config, filepath)
-
+    
+    ## Post training adding predictions to json file
+    all_results = []    
+    all_results.append(
+        (
+            unique_id=training_output_dicts["unique_id"],
+            logits=training_output_dicts["logits"],
+            loss=None
+        ))
+    all_predictions, all_nbest = compute_predictions(
+            data_ori,
+            data,
+            all_results,
+            n_best_size=args.n_best,
+            #max_program_length=self.program_length,
+            #tokenizer=self.tokenizer,
+            op_list=op_list,
+            op_list_size=len(op_list),
+            const_list=const_list,
+            const_list_size=len(const_list))
+        
     #Note: make this parallel
     #Finetune the Question Classification Model
     opt_params = span_config["model"]["init_args"]["optimizer"]["init_args"]
