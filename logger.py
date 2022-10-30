@@ -1,3 +1,4 @@
+#Deprecated File
 from torch.utils.tensorboard import SummaryWriter
 
 #file to write all the logs
