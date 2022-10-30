@@ -2,18 +2,25 @@
 import sys,math
 import collections
 import numpy as np
-all_ops = ["add", "subtract", "multiply", "divide", "exp"]
+import torch
+from torch.nn import functional as F
+from model.utils.utils import get_op_const_list
+
 
 sys.path.insert(0, '../utils/')
-max_seq_length = 512
 max_program_length = 30
 
 # provides probability of model outputted logits
 def compute_softmax(scores):
     """Compute softmax probability over raw logits."""
+    #if no logits are present
     if scores == None:
         return []
-
+    #Getting the max score of all logits
+    
+    #applying softmax
+    probs = F.softmax(scores).tolist()
+    '''
     max_score = None
     for score in scores:
         if max_score is None or score > max_score:
@@ -29,6 +36,7 @@ def compute_softmax(scores):
     probs = []
     for score in exp_scores:
         probs.append(score / total_sum)
+    '''
     return probs
 
 #computes program from logits, returns program ids
@@ -65,11 +73,14 @@ def indices_to_prog(program_indices, numbers, number_indices,
     return prog
 
 #saves the program to the json file for further usage
-def compute_predictions(all_examples, all_features, all_results, n_best_size,
-                        max_program_length, op_list, op_list_size,
-                        const_list, const_list_size):
+def compute_predictions(all_examples, all_features, all_results, n_best_size):
     
     """Computes final predictions based on logits."""
+
+    op_list, const_list = get_op_const_list()
+    const_list_size = len(const_list)
+    op_list_size = len(op_list)
+
     example_index_to_features = collections.defaultdict(list)
     for feature in all_features:
         example_index_to_features[feature["example_index"]].append(feature)
@@ -150,30 +161,3 @@ def compute_predictions(all_examples, all_features, all_results, n_best_size,
         all_nbest[example_index] = nbest_json
 
     return all_predictions, all_nbest
-
-
-'''
-Add this to pg_eval
-all_results = []
-
-        
-        for output_dict in self.predictions:
-            all_results.append(
-                RawResult(
-                    unique_id=output_dict["unique_id"],
-                    logits=output_dict["logits"],
-                    loss=None
-                ))
-            
-        all_predictions, all_nbest = compute_predictions(
-            data_ori,
-            data,
-            all_results,
-            n_best_size=self.n_best_size,
-            max_program_length=self.program_length,
-            #tokenizer=self.tokenizer,
-            op_list=op_list,
-            op_list_size=len(op_list),
-            const_list=const_list,
-            const_list_size=len(const_list))
-'''
