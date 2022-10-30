@@ -12,6 +12,7 @@ from model.fact_retriever import RetrieverModel
 from model.question_classification import QuestionClassification
 import yaml
 import constants
+from evaluation.re_eval import retriever_evaluate
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -27,10 +28,11 @@ def seed_everything(seed=11711):
 # perform model evaluation in terms of the accuracy and f1 score.
 #  Accuracy and F1 score are not the most useful metrics here. Instead we'll want Top-N
 #  retrieved accuracy.
-def retriever_model_eval(dataloader, retriever, device):
+def retriever_model_eval(dataloader, retriever, device,data_file,topn):
     retriever.eval() # switch to eval model, will turn off randomness like dropout
     final_loss = 0
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
+    testing_output_dict={}
     for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):            
         input_ids = torch.tensor(batch["input_ids"]).to("cuda")
         attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
@@ -44,10 +46,12 @@ def retriever_model_eval(dataloader, retriever, device):
         total_loss = loss.sum()
         #Logging of Loss here
         final_loss+=total_loss
+        testing_output_dict.extend(output_dicts)
 
     avg_final_loss = final_loss/step
     f1 = f1_score(output_dicts["labels"], output_dicts["preds"], average='macro')
     acc = accuracy_score(output_dicts["labels"], output_dicts["preds"])
+    recall = retriever_evaluate(testing_output_dict,data_file,topn)
 
     return acc, f1, output_dicts["labels"], output_dicts["preds"], avg_final_loss
 
@@ -162,6 +166,7 @@ def train(args):
     lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
     optimizer = configure_optimizers(retriever,opt_params,lrs_params)
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
+    training_output_dict={}
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
@@ -182,9 +187,10 @@ def train(args):
             train_log({"loss":total_loss, "epoch":epoch})
             # Adjust learning weights
             optimizer.step()
+            training_output_dict.extend(output_dicts)
             #logging mechanism for loss
         #epoch wise loss logs here--
-    
+    res,res_message = retriever_evaluate(training_output_dict,train_file,args.topn)
     filepath="./"
     save_model(retriever, optimizer, retriever_config, filepath)
     
@@ -215,7 +221,7 @@ def test(args):
         # Need to know what the type and origin of "test_dataloader" is? Is it a function?
         #  An iterable dict? A numpy array? Where is it's value set?
         qc_acc, qc_f1, qc_y_true, qc_y_preds, qc_avg_loss = qc_model_eval(test_dataloader, questionClassificationModel, device)
-        retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device)
+        retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device, test_file,args.topn))
         
         with open(args.test_out, "w+") as f:
             print(f"test acc :: {test_acc :.3f}")
@@ -246,21 +252,8 @@ def get_args():
     parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
     parser.add_argument("--dev", type=str, default="data/cfimdb-dev.txt")
     parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
-    parser.add_argument("--seed", type=int, default=11711)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--option", type=str,
-                        help='pretrain: the BERT parameters are frozen; finetune: BERT parameters are updated',
-                        choices=('pretrain', 'finetune'), default="pretrain")
     parser.add_argument("--use_gpu", action='store_true')
-    parser.add_argument("--dev_out", type=str, default="cfimdb-dev-output.txt")
-    parser.add_argument("--test_out", type=str, default="cfimdb-test-output.txt")
-
-    # hyper parameters
-    parser.add_argument("--batch_size", help='sst: 64, cfimdb: 8 can fit a 12GB GPU', type=int, default=8)
-    parser.add_argument("--hidden_dropout_prob", type=float, default=0.3)
-    parser.add_argument("--lr", type=float, help="learning rate, default lr for 'pretrain': 1e-3, 'finetune': 1e-5",
-                        default=1e-5)
-
+    parser.add_argument("--topn", type=int, default=3)    
     args = parser.parse_args()
     print(f"args: {vars(args)}")
     return args
@@ -268,6 +261,6 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     #args.filepath = f'{args.option}-{args.epochs}-{args.lr}.pt' # save path
-    seed_everything(args.seed)  # fix the seed for reproducibility
+    #seed_everything(args.seed)  # fix the seed for reproducibility
     train(args)
     test(args)
