@@ -12,7 +12,9 @@ from model.fact_retriever import RetrieverModel
 from model.question_classification import QuestionClassification
 import yaml
 import constants
-from evaluation.re_eval import retriever_evaluate
+from post_retriever import retriever_evaluate
+from evaluation.retriever_eval import retriever_eval
+
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -51,7 +53,9 @@ def retriever_model_eval(dataloader, retriever, device,data_file,topn):
     avg_final_loss = final_loss/step
     f1 = f1_score(output_dicts["labels"], output_dicts["preds"], average='macro')
     acc = accuracy_score(output_dicts["labels"], output_dicts["preds"])
-    recall = retriever_evaluate(testing_output_dict,data_file,topn)
+    retriever_evaluate(testing_output_dict,data_file,topn)
+    recall = retriever_eval(data_file)
+    
 
     return acc, f1, output_dicts["labels"], output_dicts["preds"], avg_final_loss
 
