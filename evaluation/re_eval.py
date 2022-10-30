@@ -1,4 +1,14 @@
+# Depricated
+
+
+
+#to retriever_eval and post_retriever files
+
+
+
+
 import json
+
 '''
 1. Evaluates the output of the model according to facts extracted
 2. Adds the retrieved facts to the data files for PG Module to work on it.
