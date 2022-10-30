@@ -1,4 +1,5 @@
 import json
+from sklearn.metrics import accuracy_score
 #evaluating Program Generator's effictiency from program and result of prog
 max_program_length = 30
 all_ops = ["add", "subtract", "multiply", "divide", "exp"]
@@ -127,13 +128,16 @@ def eval_program(program):
 
     return invalid_flag, this_res
 
+def evaluate_prog_tokens(pred_prog, true_prog):
+    accuracy=accuracy_score([[i] for i in true_prog], pred_prog)
+    return accuracy
+
 #evaluates program and result of program against true results
 def evaluate_result(all_nbest, json_ori, program_mode):
     '''
     execution acc
     program acc
     '''
-
     data = all_nbest
 
     with open(json_ori) as f_in:
@@ -169,6 +173,11 @@ def evaluate_result(all_nbest, json_ori, program_mode):
             gold = gold[:-1]
             gold = reprog_to_seq(gold, is_gold=True)
             gold += ["EOF"]
+        
+        # logic to check tokenized accuracy
+        accuracy = evaluate_prog_tokens(pred, gold)
+        print("accuracy of the program tokens=",accuracy)
+
         #evaluating the list progs and gettingt the result
         invalid_flag, exe_res = eval_program(pred)
         #check if evaluated result is same as true result
