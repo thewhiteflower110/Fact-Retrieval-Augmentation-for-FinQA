@@ -5,3 +5,4 @@ qc_config = "./config/qc_config.yaml"
 train_file = "./data/files/train.json"
 test_file = "./data/files/test.json"
 dev_file = "./data/files/dev.json"
+max_seq_length = 30
