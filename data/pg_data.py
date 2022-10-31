@@ -14,12 +14,11 @@ class ProgramGenerationDataset(Dataset):
         self.data_all = self.read()
         self.transformer_model_name = transformer_model_name
         self.tokenizer = AutoTokenizer.from_pretrained(self.transformer_model_name)
-        self.max_seq_length = constants.max_seq_length #### add to constant as 30
-        self.op_list = constants.op_list
-        self.const_list = constants.const_list
+        self.max_seq_length = constants.max_seq_length #### add to constant as 30 if not in training config 
+        self.op_list,self.const_list = get_op_const_list()
         self.const_list_size = len(self.const_list)
         self.op_list_size = len(self.op_list)
-        self.max_program_length = constants.max_program_length ### add to constants
+        self.max_program_length = constants.max_program_length ### add to constants if not in training config 
         self.is_training=is_training
         self.entity_name = entity_name
         self.data_all = self.read()
@@ -295,4 +294,26 @@ class ProgramGenerationDataset(Dataset):
         #Dont know where these come from cls_token, sep_token
         return self.concatenating(tokenizer,example, cls_token, sep_token)
 
+  
+#helper to collate function
+def right_pad_sequences(sequences: List[torch.Tensor], batch_first: bool = True, padding_value: Union[int, bool] = 0, 
+                       max_len: int = -1, device: torch.device = None) -> torch.Tensor:
+    assert all([len(seq.shape) == 1 for seq in sequences])
+    max_len = max_len if max_len > 0 else max(len(s) for s in sequences)
+    device = device if device is not None else sequences[0].device
 
+    padded_seqs = []
+    for seq in sequences:
+        padded_seqs.append(torch.cat(seq, (torch.full((max_len - seq.shape[0],), padding_value, dtype=torch.long).to(device))))
+    return torch.stack(padded_seqs)
+
+def customized_collate_fn(examples: List) -> Dict[str, Any]:
+    result_dict = {}
+    for k in examples[0].keys():
+        try:
+            result_dict[k] = right_pad_sequences([torch.tensor(ex[k]) for ex in examples], 
+                                    batch_first=True, padding_value=0)
+        except:
+            result_dict[k] = [ex[k] for ex in examples]
+    return 
+    
