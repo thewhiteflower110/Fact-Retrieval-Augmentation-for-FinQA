@@ -154,8 +154,8 @@ class RetrieverDataset(Dataset):
         pos_table_ids = example["pos_table_ids"] #true table evidence indexes
         table_descriptions = example["table_descriptions"]
         relevant_table_ids = set([i.split("-")[0] for i in pos_table_ids])
-        cls_token =self.tokenizer(cls_token) ##CHANGE THIS IF IT DOESNT WORK !
-        sep_token = self.tokenizer(sep_token) ### CHANGE THIS
+        cls_token =self.tokenizer.cls_token ##CHANGE THIS IF IT DOESNT WORK !
+        sep_token = self.tokenizer.sep_token ### CHANGE THIS
         #paragraphs
         #COnverting each sentence to input feature with thier sentence ids
         for sent_idx, sent in enumerate(paragraphs):
@@ -186,7 +186,7 @@ class RetrieverDataset(Dataset):
                     self.tokenizer, question, this_gold_sent, 1, self.max_seq_length,
                     cls_token, sep_token)
                 this_input_feature["ind"] = cell_idx
-                this_input_feature["filename_id"] = example.filename_id
+                this_input_feature["filename_id"] = example["filename_id"]
                 pos_sent_features.append(this_input_feature)
             else:
                 ti = cell_idx.split("-")[0]
@@ -194,7 +194,7 @@ class RetrieverDataset(Dataset):
                     self.tokenizer, question, this_gold_sent, 0, self.max_seq_length,
                     cls_token, sep_token)
                 this_input_feature["ind"] = cell_idx
-                this_input_feature["filename_id"] = example.filename_id
+                this_input_feature["filename_id"] = example["filename_id"]
                 # even if exact cell_idx is not present it is trying to find if prefix 0 exists in table indx, and it will keep it as relevant
                 if ti in relevant_table_ids:
                     relevant_neg_table_features.append(this_input_feature)
