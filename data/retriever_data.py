@@ -30,7 +30,7 @@ class RetrieverDataset(Dataset):
         #features_all=[]
         res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table = [], [], [], []
         for example in self.data_all:
-            features = self.convert_example_to_feature(example)
+            features = self.get_example_feature(example)
             pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features = features[0], features[1], features[2], features[3]
             # MODEL WRITE extend, we write APPEND
             res.extend(pos_sent_features) 
@@ -39,6 +39,34 @@ class RetrieverDataset(Dataset):
             res_relevant_neg_table.extend(relevant_neg_table_features)
         
         return res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table
+
+    def get_example_feature(self,example):
+      question = example["qa"]["question"]
+    
+      paragraphs = example["paragraphs"]
+      # tables = entry["tables"]
+      
+      if 'text_evidence' in example["qa"]:
+          pos_sent_ids = example["qa"]['text_evidence']
+          pos_table_ids = example["qa"]['table_evidence']
+      else: # test set
+          pos_sent_ids = []
+          pos_table_ids = []
+
+      
+      table_descriptions = example["table_description"]
+      filename_id = example["uid"]
+
+      example= {
+          "filename_id":filename_id,
+          "question":question,
+          "paragraphs":paragraphs,
+          # tables=tables,
+          "table_descriptions":table_descriptions,
+          "pos_sent_ids":pos_sent_ids,
+          "pos_table_ids":pos_table_ids}
+
+      return self.convert_example_to_feature(example)
 
     #tokenizes the given text and takes care of special tokens
     def tokenize(self,tokenizer, text, apply_basic_tokenization=False):
@@ -187,7 +215,7 @@ def right_pad_sequences(sequences: List[torch.Tensor], batch_first: bool = True,
         padded_seqs.append(torch.cat(seq, (torch.full((max_len - seq.shape[0],), padding_value, dtype=torch.long).to(device))))
     return torch.stack(padded_seqs)
 
-def customized_collate_fn(examples: List[Dict[str, Any]]) -> Dict[str, Any]:
+def customized_retriever_collate_fn(examples: List[Dict[str, Any]]) -> Dict[str, Any]:
     result_dict = {}
     for k in examples[0].keys():
         try:
