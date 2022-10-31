@@ -1,270 +1,226 @@
-import time, random, numpy as np, argparse, sys, re, os
-import torch
-from torch import nn
-from torch.cuda import device_count
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
-from sklearn.metrics import classification_report, f1_score, recall_score, accuracy_score
-from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
-from transformers.optimization import get_cosine_schedule_with_warmup
-from tqdm import tqdm
-from model.fact_retriever import RetrieverModel
-from model.question_classification import QuestionClassification
-import yaml
+# RETRIEVER Dataset and dataloader!!
+import json
+from transformers import AutoTokenizer
 import constants
-from post_retriever import retriever_evaluate
-from evaluation.retriever_eval import retriever_eval
+import re
+import torch
+from typing import Dict, Iterable, List, Any, Optional, Union
+from torch.utils.data import Dataset
 
+class RetrieverDataset(Dataset):
+    def __init__(self,data_file,transformer_model_name):
+        self.data_file = data_file
+        self.data_all = self.read()
+        self.transformer_model_name = transformer_model_name
+        self.tokenizer = AutoTokenizer.from_pretrained(self.transformer_model_name)
+        self.max_seq_length = constants.max_seq_length #### add to constant as 30
+        self.instances = self.get_features()
 
-TQDM_DISABLE=True
-# fix the random seed
-def seed_everything(seed=11711):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    def __getitem__(self, idx: int):
+        return self.instances[idx]
 
-# perform model evaluation in terms of the accuracy and f1 score.
-#  Accuracy and F1 score are not the most useful metrics here. Instead we'll want Top-N
-#  retrieved accuracy.
-def retriever_model_eval(dataloader, retriever, device,data_file,topn):
-    retriever.eval() # switch to eval model, will turn off randomness like dropout
-    final_loss = 0
-    criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
-    testing_output_dict={}
-    for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):            
-        input_ids = torch.tensor(batch["input_ids"]).to("cuda")
-        attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
-        labels = torch.tensor(batch["labels"]).to("cuda")
-        output_dicts = retriever() #intuitively calling the forward method
-        logits = []
-        for output_dict in output_dicts:
-            logits.append(output_dict["logits"])
-        logits = torch.stack(logits)
-        loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
-        total_loss = loss.sum()
-        #Logging of Loss here
-        final_loss+=total_loss
-        testing_output_dict.extend(output_dicts)
-
-    avg_final_loss = final_loss/step
-    f1 = f1_score(output_dicts["labels"], output_dicts["preds"], average='macro')
-    acc = accuracy_score(output_dicts["labels"], output_dicts["preds"])
-    retriever_evaluate(testing_output_dict,data_file,topn)
-    recall = retriever_eval(data_file)
+    def __len__(self):
+        return len(self.instances) 
+    def read(self):
+        with open(self.data_file) as f:
+            data_all = json.load(f)
+        return data_all
     
+    def get_features(self):    
+        #features_all=[]
+        res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table = [], [], [], []
+        for example in self.data_all:
+            features = self.get_example_feature(example)
+            pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features = features[0], features[1], features[2], features[3]
+            # MODEL WRITE extend, we write APPEND
+            res.extend(pos_sent_features) 
+            res_neg_sent.extend(neg_sent_features)
+            res_irrelevant_neg_table.extend(irrelevant_neg_table_features)
+            res_relevant_neg_table.extend(relevant_neg_table_features)
+        
+        return res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table
 
-    return acc, f1, output_dicts["labels"], output_dicts["preds"], avg_final_loss
-
-# Is there a way to retrieve the actual operations here? That could be an important part
-#  of error analysis.
-def qc_model_eval(dataloader, questionClassificationModel, device):
-    questionClassificationModel.eval()
-    #try to use inbuilt test and predict functions
-    #Getting results on Fact Retriever Module:
-    val_loss = 0
-    for step, batch in enumerate(tqdm(dataloader, desc=f'val-{epoch}', disable=TQDM_DISABLE)):
-        input_ids = torch.tensor(batch["input_ids"]).to("cuda")
-        attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
-        labels = torch.tensor(batch["labels"]).to("cuda")
-        outputs = questionClassificationModel(input_ids,attention_mask,labels) #intuitively calling the forward method
-        loss = outputs.loss
-        total_loss+=loss
-        #Logging of Loss here
-
-    avg_total_loss = total_loss/step
-    f1 = f1_score(labels, outputs["preds"], average='macro')
-    acc = accuracy_score(labels, outputs["preds"])
-
-    return acc, f1, labels, outputs["preds"], avg_total_loss
-
-def save_model(model, optimizer, args, config, filepath):
-    save_info = {
-        'model': model.state_dict(),
-        'optim': optimizer.state_dict(),
-        'args': args,
-        'model_config': config,
-        'system_rng': random.getstate(),
-        'numpy_rng': np.random.get_state(),
-        'torch_rng': torch.random.get_rng_state(),
-    }
-
-    torch.save(save_info, filepath)
-    print(f"save the model to {filepath}")
-
-writer = SummaryWriter('runs/Fact Retriever Module')
-
-def train_log(dict):
-    writer.add_scalar("Loss/train", dict["loss"])
-    writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
-
-def train(args):
-    device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-    #### Load data
-    # create the data and its corresponding datasets and dataloader
-    #train_data, num_labels = create_data(args.train, 'train')
-    #dev_data = create_data(args.dev, 'valid')
-
-    #train_dataset = BertDataset(train_data, args)
-    #dev_dataset = BertDataset(dev_data, args)
-
-    #train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=args.batch_size,
-    #                              collate_fn=train_dataset.collate_fn)
-    #dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=args.batch_size,
-    #                            collate_fn=dev_dataset.collate_fn)
-
-    #### Init model
-    # Initiate and configure retriever
-    with open(constants.retriever_config, 'r') as file:
-        retriever_config = yaml.safe_load(file)    
-    config = retriever_config["model"]["init_args"]
-    retriever = RetrieverModel(config)
-    retriever = retriever.to(device)
-
-    #question classification config
-    with open(constants.qc_config, 'r') as file:
-        qc_config = yaml.safe_load(file)  
-    config = qc_config["model"]["init_args"]
-    questionClassificationModel = QuestionClassification(config)
-    questionClassificationModel = questionClassificationModel.to(device)
-
-    #Note: make this parallel
-    #Finetune the Question Classification Model
-    opt_params = qc_config["model"]["init_args"]["optimizer"]["init_args"]
-    lrs_params = qc_config["model"]["init_args"]["lr_scheduler"]
-    optimizer = configure_optimizers(questionClassificationModel,opt_params,lrs_params)
+    def get_example_feature(self,example):
+      question = example["qa"]["question"]
     
-    for epoch in range(args.epochs):
-        #this loop discard the .train() method
-        train_loss = 0
-        num_batches = 0
+      paragraphs = example["paragraphs"]
+      # tables = entry["tables"]
+      
+      if 'text_evidence' in example["qa"]:
+          pos_sent_ids = example["qa"]['text_evidence']
+          pos_table_ids = example["qa"]['table_evidence']
+      else: # test set
+          pos_sent_ids = []
+          pos_table_ids = []
+
+      
+      table_descriptions = example["table_description"]
+      filename_id = example["uid"]
+
+      example= {
+          "filename_id":filename_id,
+          "question":question,
+          "paragraphs":paragraphs,
+          # tables=tables,
+          "table_descriptions":table_descriptions,
+          "pos_sent_ids":pos_sent_ids,
+          "pos_table_ids":pos_table_ids}
+
+      return self.convert_example_to_feature(example)
+
+    #tokenizes the given text and takes care of special tokens
+    def tokenize(self,tokenizer, text, apply_basic_tokenization=False):
+        """Tokenizes text, optionally looking up special tokens separately.
+        Args:
+        tokenizer: a tokenizer from bert.tokenization.FullTokenizer
+        text: text to tokenize
+        apply_basic_tokenization: If True, apply the basic tokenization. If False,
+            apply the full tokenization (basic + wordpiece).
+        Returns:
+        tokenized text.
+        A special token is any text with no spaces enclosed in square brackets with no
+        space, so we separate those out and look them up in the dictionary before
+        doing actual tokenization.
+        """
+
+        _SPECIAL_TOKENS_RE = re.compile(r"^<[^ ]*>$", re.UNICODE)
+
+        #bert basic tokenizer 
+        tokenize_fn = tokenizer.tokenize
+        if apply_basic_tokenization:
+            tokenize_fn = tokenizer.basic_tokenizer.tokenize
+
+        #tokenize the usual text, and for special tokens, use them if present or use UNK
+        tokens = []
+        for token in text.split(" "):
+            if _SPECIAL_TOKENS_RE.match(token):
+                #put the special tokens as it
+                if token in tokenizer.get_vocab():
+                    tokens.append(token)
+                # put the special tokens as UNKs
+                else:
+                    tokens.append(tokenizer.unk_token)
+            else:
+                tokens.extend(tokenize_fn(token))
+        return tokens
+
+    #concatenating each sentence with its question and converting to model facourable inputs
+    def concatenating(self,tokenizer, question, sent, label, max_seq_length,cls_token, sep_token):
+        '''
+        single pair of question, context, label feature
+        ##  DONT KNOW WHAT IS cls token and sep token!!
+        '''
+
+        question_tokens = self.tokenize(tokenizer, question)
+        context_tokens = self.tokenize(tokenizer, sent)
+        tokens = [cls_token] + question_tokens + [sep_token] + context_tokens
+        #initialized to 0
+        segment_ids = [0] * len(tokens)
+        #segment_ids.extend([0] * len(context_tokens))
         
-        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
-            input_ids = torch.tensor(batch["input_ids"]).to("cuda")
-            attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
-            labels = torch.tensor(batch["labels"]).to("cuda")
-            outputs = questionClassificationModel.train() #intuitively calling the forward method
-            loss = outputs.loss
-            train_loss+=loss
-            train_log({"loss":loss, "epoch":epoch})
-            loss.backward()
-            # Adjust learning weights
-            optimizer.step()
-            #logging mechanism for loss
-        #epoch wise loss logs here--
-        #scheduler.step()
+        #striping the input till max seq length
+        if len(tokens) > max_seq_length:
+            tokens = tokens[:max_seq_length-1] #29
+            tokens += [sep_token] #30th token
+            segment_ids = segment_ids[:max_seq_length]
         
-        # Double-check; are these the actual outputs of the QC model? Aren't there
-        #  several different accuracy measures for that model?
-        acc, f1, y_true, y_preds, avg_loss = qc_model_eval(val_dataloader, questionClassificationModel, device)
-        train_log({"val_loss":avg_loss, "epoch":epoch})
-    filepath="./"
-    save_model(questionClassificationModel, optimizer, qc_config, filepath)
+        #getting ids of token and initializing the mask
+        input_ids = tokenizer.convert_tokens_to_ids(tokens)
+        input_mask = [1] * len(input_ids)
 
-    #Note: make this parallel
-    #Finetune the Retriever Model
-    opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
-    lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
-    optimizer = configure_optimizers(retriever,opt_params,lrs_params)
-    criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
-    training_output_dict={}
-    for epoch in range(args.epochs):
-        #this loop discard the .train() method
-        train_loss = 0
-        num_batches = 0
-        for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
-            input_ids = torch.tensor(batch["input_ids"]).to("cuda")
-            attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
-            labels = torch.tensor(batch["labels"]).to("cuda")
-            output_dicts = retriever.train() #intuitively calling the forward method
-            logits = []
-            for output_dict in output_dicts:
-                logits.append(output_dict["logits"])
-            logits = torch.stack(logits)
-            loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
-            total_loss = loss.sum()
-            total_loss.backward()
-            train_loss+=total_loss
-            train_log({"loss":total_loss, "epoch":epoch})
-            # Adjust learning weights
-            optimizer.step()
-            training_output_dict.extend(output_dicts)
-            #logging mechanism for loss
-        #epoch wise loss logs here--
-    res,res_message = retriever_evaluate(training_output_dict,train_file,args.topn)
-    filepath="./"
-    save_model(retriever, optimizer, retriever_config, filepath)
-    
-    #Getting val results on Fact Retriever Module(Retriever + Question Classification):
-    acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(val_dataloader, retriever, device)
-    train_log({"val_loss":avg_loss, "epoch":epoch})
-    #log the metrics
-
-# Why group the fact retriever and the question classification module together like this?
-#  The QC model is a subsection of the Reasoning Module.
-def test(args):
-    with torch.no_grad():
-        device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-        saved = torch.load(args.filepath)
-        config = saved['model_config']
-        retriever = RetrieverModel(config)
-        retriever = retriever.to(device)
-        questionClassificationModel = QuestionClassification(config)
-        questionClassificationModel = questionClassificationModel.to(device)
-
-        retriever.load_state_dict(saved['questionClassificationModel'])
-        retriever.load_state_dict(saved['retriever'])
-        questionClassificationModel = questionClassificationModel.to(device)
-        retriever = retriever.to(device)
-        print(f"load model from {args.filepath}")
+        #converting to max_seq_lengtj
+        padding = [0] * (max_seq_length - len(input_ids))
+        input_ids.extend(padding)
+        input_mask.extend(padding)
+        segment_ids.extend(padding)
         
-        #get the dataset and dataloaders
-        # Need to know what the type and origin of "test_dataloader" is? Is it a function?
-        #  An iterable dict? A numpy array? Where is it's value set?
-        qc_acc, qc_f1, qc_y_true, qc_y_preds, qc_avg_loss = qc_model_eval(test_dataloader, questionClassificationModel, device)
-        retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device, test_file,args.topn))
+        this_input_feature = {
+            "context": sent, #list of sentences
+            "tokens": tokens, #list of words
+            "input_ids": input_ids,#list of ints
+            "input_mask": input_mask,#list
+            "segment_ids": segment_ids, #list
+            "label": label
+        }
+        return this_input_feature
+
+    def convert_example_to_feature(self,example):
+        #1 example
+        #returns 4 list of tensors/lists ?
+        pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features = [], [], [], []
+        question = example["question"]
+        paragraphs = example["paragraphs"]
+        pos_text_ids = example["pos_sent_ids"]
+        pos_table_ids = example["pos_table_ids"] #true table evidence indexes
+        table_descriptions = example["table_descriptions"]
+        relevant_table_ids = set([i.split("-")[0] for i in pos_table_ids])
+        cls_token =self.tokenizer.cls_token ##CHANGE THIS IF IT DOESNT WORK !
+        sep_token = self.tokenizer.sep_token ### CHANGE THIS
+        #paragraphs
+        #COnverting each sentence to input feature with thier sentence ids
+        for sent_idx, sent in enumerate(paragraphs):
+            if sent_idx in pos_text_ids:
+
+                this_input_feature = self.concatenating(
+                    self.tokenizer, question, sent, 1, self.max_seq_length,
+                    cls_token, sep_token)
+            else:
+                this_input_feature = self.concatenating(
+                    self.tokenizer, question, sent, 0, self.max_seq_length,
+                    cls_token, sep_token)
+            
+            this_input_feature["ind"] = sent_idx
+            this_input_feature["filename_id"] = example["filename_id"]
+            
+            if sent_idx in pos_text_ids:
+                pos_sent_features.append(this_input_feature)
+            else:
+                neg_sent_features.append(this_input_feature)
+
+        #tables
         
-        with open(args.test_out, "w+") as f:
-            print(f"test acc :: {test_acc :.3f}")
-            for t, p in zip( test_true, test_pred):
-                f.write(f"{t} ||| {p}\n")
+        for cell_idx in table_descriptions:
+            this_gold_sent = table_descriptions[cell_idx]
+            if cell_idx in pos_table_ids:
+                this_input_feature = self.concatenating(
+                    self.tokenizer, question, this_gold_sent, 1, self.max_seq_length,
+                    cls_token, sep_token)
+                this_input_feature["ind"] = cell_idx
+                this_input_feature["filename_id"] = example["filename_id"]
+                pos_sent_features.append(this_input_feature)
+            else:
+                ti = cell_idx.split("-")[0]
+                this_input_feature = self.concatenating(
+                    self.tokenizer, question, this_gold_sent, 0, self.max_seq_length,
+                    cls_token, sep_token)
+                this_input_feature["ind"] = cell_idx
+                this_input_feature["filename_id"] = example["filename_id"]
+                # even if exact cell_idx is not present it is trying to find if prefix 0 exists in table indx, and it will keep it as relevant
+                if ti in relevant_table_ids:
+                    relevant_neg_table_features.append(this_input_feature)
+                else:
+                    irrelevant_neg_table_features.append(this_input_feature)
+        
+        return pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features
 
-def configure_optimizers(model,opt_params,lrs_params):
-    optimizer = AdamW(model.parameters(), **opt_params)
-    if lrs_params["name"] == "cosine":
-        lr_scheduler = get_cosine_schedule_with_warmup(optimizer, **lrs_params["init_args"])
-    elif lrs_params["name"] == "linear":
-        lr_scheduler = get_linear_schedule_with_warmup(optimizer, **lrs_params["init_args"])
-    elif lrs_params["name"] == "constant":
-        lr_scheduler = get_constant_schedule_with_warmup(optimizer, **lrs_params["init_args"])
-    else:
-        raise ValueError(f"lr_scheduler {lrs_params} is not supported")
+#helper to collate function
+def right_pad_sequences(sequences: List[torch.Tensor], batch_first: bool = True, padding_value: Union[int, bool] = 0, 
+                       max_len: int = -1, device: torch.device = None) -> torch.Tensor:
+    assert all([len(seq.shape) == 1 for seq in sequences])
+    max_len = max_len if max_len > 0 else max(len(s) for s in sequences)
+    device = device if device is not None else sequences[0].device
 
-    return {"optimizer": optimizer, 
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "step"
-                }
-            }
+    padded_seqs = []
+    for seq in sequences:
+        padded_seqs.append(torch.cat(seq, (torch.full((max_len - seq.shape[0],), padding_value, dtype=torch.long).to(device))))
+    return torch.stack(padded_seqs)
 
-#change the args according to need
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--train", type=str, default="data/cfimdb-train.txt")
-    parser.add_argument("--dev", type=str, default="data/cfimdb-dev.txt")
-    parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
-    parser.add_argument("--use_gpu", action='store_true')
-    parser.add_argument("--topn", type=int, default=3)    
-    args = parser.parse_args()
-    print(f"args: {vars(args)}")
-    return args
-
-if __name__ == "__main__":
-    args = get_args()
-    #args.filepath = f'{args.option}-{args.epochs}-{args.lr}.pt' # save path
-    #seed_everything(args.seed)  # fix the seed for reproducibility
-    train(args)
-    test(args)
+def customized_retriever_collate_fn(examples: List[Dict[str, Any]]) -> Dict[str, Any]:
+    result_dict = {}
+    for k in examples[0].keys():
+        try:
+            result_dict[k] = right_pad_sequences([torch.tensor(ex[k]) for ex in examples], 
+                                    batch_first=True, padding_value=0)
+        except:
+            result_dict[k] = [ex[k] for ex in examples]
+    return result_dict
