@@ -29,12 +29,12 @@ class RetrieverModel(nn.Module):
           nn.Linear(hidden_size, 2, bias=True)
         )
     
-    def forward(self, input_ids, attention_mask, segment_ids, metadata) -> List[Dict[str, Any]]:
+    def forward(self, input_ids, attention_mask, segment_ids, metadata, device) -> List[Dict[str, Any]]:
         
         #put the 3 vectors on gpu
-        input_ids = torch.tensor(input_ids).to("cuda")
-        attention_mask = torch.tensor(attention_mask).to("cuda")
-        segment_ids = torch.tensor(segment_ids).to("cuda")
+        input_ids = torch.tensor(input_ids).to(device)
+        attention_mask = torch.tensor(attention_mask).to(device)
+        segment_ids = torch.tensor(segment_ids).to(device)
 
         # Get encodings from the Language Model
         bert_outputs = self.model(
