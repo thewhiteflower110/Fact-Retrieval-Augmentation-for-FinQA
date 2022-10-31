@@ -10,7 +10,7 @@ import time
 from tqdm import tqdm
 import random
 class RetrieverDataset(Dataset):
-    def __init__(self,data_file,transformer_model_name,mode):
+    def __init__(self,data_file,transformer_model_name, mode="train"):
         self.data_file = data_file
         self.data_all = self.read()
         self.transformer_model_name = transformer_model_name
@@ -24,6 +24,7 @@ class RetrieverDataset(Dataset):
 
     def __len__(self):
         return len(self.instances) 
+
     def read(self):
         with open(self.data_file) as f:
             data_all = json.load(f)
@@ -31,22 +32,21 @@ class RetrieverDataset(Dataset):
     
     def get_features(self):    
         #features_all=[]
-        i=0
-        
         res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table = [], [], [], []
         for example in tqdm(self.data_all):
-            start=time.time()
             features = self.get_example_feature(example)
             pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features = features[0], features[1], features[2], features[3]
             # MODEL WRITE extend, we write APPEND
-            end=time.time()
-            print("total time taken = ",end-start)
-            print("finished examples = ",i)
             res.extend(pos_sent_features) 
             res_neg_sent.extend(neg_sent_features)
             res_irrelevant_neg_table.extend(irrelevant_neg_table_features)
             res_relevant_neg_table.extend(relevant_neg_table_features)
         
+        try:
+          if self.mode:
+            print("fixed")
+        except:
+          self.mode="train"
         if self.mode == "train":
             random.shuffle(res_neg_sent)
             random.shuffle(res_irrelevant_neg_table)
