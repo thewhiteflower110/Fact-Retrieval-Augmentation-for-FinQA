@@ -12,10 +12,11 @@ from model.fact_retriever import RetrieverModel
 from model.question_classification import QuestionClassification
 import yaml
 import constants
-from post_retriever import retriever_evaluate
+from post_retriever import retriever_evaluate, combine_all_outputs
 from evaluation.retriever_eval import retriever_eval
 from torch.utils.tensorboard import SummaryWriter
 from data.retriever_data import RetrieverDataset, customized_retriever_collate_fn
+from torchmetrics import F1Score
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -35,28 +36,35 @@ def retriever_model_eval(dataloader, retriever, device,data_file,topn):
     retriever.eval() # switch to eval model, will turn off randomness like dropout
     final_loss = 0
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
-    testing_output_dict={}
+    testing_output_dict=[]
+    all_labels = []
+    all_logits = []
     for step, batch in enumerate(tqdm(dataloader, desc=f'val', disable=TQDM_DISABLE)):            
-        input_ids = torch.tensor(batch["input_ids"]).to(device)
-        attention_mask = torch.tensor(batch["input_mask"]).to(device)
-        labels = torch.tensor(batch["labels"]).to(device)
-        output_dicts = retriever() #intuitively calling the forward method
+        labels = torch.tensor(batch["label"]).to(device)
+        metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
+        output_dicts = retriever(batch["input_ids"], batch["input_mask"], batch["segment_ids"], metadata, device) #intuitively calling the forward method
         logits = []
+        logits_=[]
         for output_dict in output_dicts:
             logits.append(output_dict["logits"])
+            logits_.append(output_dict["logits"].argmax())
         logits = torch.stack(logits)
         loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
-        total_loss = loss.sum()
-        #Logging of Loss here
-        final_loss+=total_loss
+        total_loss = loss.sum() #total loss of entire batch
+        final_loss+=total_loss #total loss of validation
         testing_output_dict.extend(output_dicts)
+        all_labels.extend(batch["label"])
+        all_logits.extend(logits_)
 
     avg_final_loss = final_loss/step
-    f1 = f1_score(output_dicts["labels"], output_dicts["preds"], average='macro')
-    acc = accuracy_score(output_dicts["labels"], output_dicts["preds"])
+    #final_dict = combine_all_outputs(testing_output_dict)
+    f1 = F1Score(num_classes=2)
+    #f1(, all_labels)
+    f1 = f1_score(all_labels, all_logits, average='macro')
+    acc = accuracy_score(all_labels, all_logits)
     retriever_evaluate(testing_output_dict,data_file,topn)
-    recall = retriever_eval(data_file)
-    return acc, f1, output_dicts["labels"], output_dicts["preds"], avg_final_loss
+    #recall = retriever_eval(data_file)
+    return acc, f1,all_labels, all_logits, avg_final_loss
 
 # Is there a way to retrieve the actual operations here? That could be an important part
 #  of error analysis.
@@ -80,8 +88,9 @@ def qc_model_eval(dataloader, questionClassificationModel, device):
 
     return acc, f1, labels, outputs["preds"], avg_total_loss
 
-def save_model(model, optimizer, args, config, filepath):
+def save_model(name, model, optimizer, args, config, filepath):
     save_info = {
+        'name': name,
         'model': model.state_dict(),
         'optim': optimizer.state_dict(),
         'args': args,
@@ -90,18 +99,18 @@ def save_model(model, optimizer, args, config, filepath):
         'numpy_rng': np.random.get_state(),
         'torch_rng': torch.random.get_rng_state(),
     }
-
-    torch.save(save_info, filepath)
+    files=filepath+"/name"+".pt"
+    torch.save(save_info, files)
     print(f"save the model to {filepath}")
 
 writer = SummaryWriter('runs/Fact Retriever Module')
 
 def train_log(dict):
-    writer.add_scalar("Loss/train", dict["loss"], dict["epoch"])
-    #writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
-
-
-
+    if "val_loss" in dict:
+      writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
+    else:
+      writer.add_scalar("Loss/train", dict["loss"], dict["epoch"])
+    
 def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
     #### Load data
@@ -115,7 +124,7 @@ def train(args):
     retriever = RetrieverModel(retriever_config["model"]["init_args"])
     retriever = retriever.to(device)
 
-    train_dataset = RetrieverDataset(args.dev,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
+    train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
     dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"],mode="valid")
 
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=retriever_config["data"]["init_args"]["batch_size"],
@@ -123,7 +132,7 @@ def train(args):
     dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=retriever_config["data"]["init_args"]["val_batch_size"],
                                 collate_fn=customized_retriever_collate_fn)
 
-    '''
+   
     #question classification config
     with open(constants.qc_config, 'r') as file:
         qc_config = yaml.safe_load(file)  
@@ -163,7 +172,7 @@ def train(args):
         train_log({"val_loss":avg_loss, "epoch":epoch})
     filepath="./"
     save_model(questionClassificationModel, optimizer, qc_config, filepath)
-    '''
+    
     #Note: make this parallel
     #Finetune the Retriever Model
     opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
@@ -192,18 +201,23 @@ def train(args):
             train_log({"loss":total_loss, "epoch":epoch})
             # Adjust learning weights
             scheduler.step()
-            training_output_dict.append(output_dicts)
+            training_output_dict.extend(output_dicts)
             #logging mechanism for loss
         #epoch wise loss logs here--
-    res,res_message = retriever_evaluate(training_output_dict,args.train,args.topn)
-    filepath="./"
-    save_model(retriever, scheduler, retriever_config, filepath)
-    
-    #Getting val results on Fact Retriever Module(Retriever + Question Classification):
-    acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device)
-    train_log({"val_loss":avg_loss, "epoch":epoch})
-    #log the metrics
+        #Getting val results on Fact Retriever Module(Retriever + Question Classification):
+        acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device,args.dev,args.topn)
+        print(acc,f1,avg_loss)
+        train_log({"val_loss":avg_loss, "epoch":epoch})
+        #log the metrics
 
+    retriever_evaluate(training_output_dict,args.train,args.topn)
+    path = "./checkpoints"
+    if not os.path.exists(path):
+        # Create a new directory because it does not exist
+        os.makedirs(path)
+    save_model("FactRetriever", retriever, scheduler, args, retriever_config, path)
+
+    
 # Why group the fact retriever and the question classification module together like this?
 #  The QC model is a subsection of the Reasoning Module.
 def test(args):
@@ -219,11 +233,11 @@ def test(args):
 
         test_dataloader = DataLoader(test_dataset, shuffle=True, batch_size=config["data"]["init_args"]["batch_size"],
                                   collate_fn=customized_retriever_collate_fn)
-        '''
+        
         questionClassificationModel = QuestionClassification(config)
         questionClassificationModel = questionClassificationModel.to(device)
         questionClassificationModel.load_state_dict(saved['questionClassificationModel'])
-        '''
+        
 
         print(f"load model from {args.filepath}")
         
@@ -248,8 +262,6 @@ def configure_optimizers(model,opt_params,lrs_params):
         lr_scheduler = get_constant_schedule_with_warmup(optimizer, **lrs_params["init_args"])
     else:
         raise ValueError(f"lr_scheduler {lrs_params} is not supported")
-
-    
     return lr_scheduler
 
 #change the args according to need
@@ -260,7 +272,7 @@ def get_args():
     parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--topn", type=int, default=3)    
-    parser.add_argument("--epochs", type=int, default=20)    
+    parser.add_argument("--epochs", type=int, default=10)    
 
     args = parser.parse_args()
     print(f"args: {vars(args)}")
