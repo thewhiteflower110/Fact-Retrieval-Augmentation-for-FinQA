@@ -5,8 +5,9 @@ from typing import Optional, Dict, Any, Tuple, List
 from transformers.optimization import AdamW, get_constant_schedule_with_warmup, get_linear_schedule_with_warmup
 from transformers.optimization import get_cosine_schedule_with_warmup
 
-class RetrieverModel:    
+class RetrieverModel(nn.Module):    
     def __init__(self, config):
+        super().__init__()
         self.model = AutoModel.from_pretrained(config["transformer_model_name"])
         self.model_config = AutoConfig.from_pretrained(config["transformer_model_name"])
         self.criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
