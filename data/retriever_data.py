@@ -6,15 +6,18 @@ import re
 import torch
 from typing import Dict, Iterable, List, Any, Optional, Union
 from torch.utils.data import Dataset
-
+import time
+from tqdm import tqdm
+import random
 class RetrieverDataset(Dataset):
-    def __init__(self,data_file,transformer_model_name):
+    def __init__(self,data_file,transformer_model_name,mode):
         self.data_file = data_file
         self.data_all = self.read()
         self.transformer_model_name = transformer_model_name
         self.tokenizer = AutoTokenizer.from_pretrained(self.transformer_model_name)
         self.max_seq_length = constants.max_seq_length #### add to constant as 30
         self.instances = self.get_features()
+        self.mode = mode
 
     def __getitem__(self, idx: int):
         return self.instances[idx]
@@ -28,17 +31,32 @@ class RetrieverDataset(Dataset):
     
     def get_features(self):    
         #features_all=[]
+        i=0
+        
         res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table = [], [], [], []
-        for example in self.data_all:
+        for example in tqdm(self.data_all):
+            start=time.time()
             features = self.get_example_feature(example)
             pos_sent_features, neg_sent_features, irrelevant_neg_table_features, relevant_neg_table_features = features[0], features[1], features[2], features[3]
             # MODEL WRITE extend, we write APPEND
+            end=time.time()
+            print("total time taken = ",end-start)
+            print("finished examples = ",i)
             res.extend(pos_sent_features) 
             res_neg_sent.extend(neg_sent_features)
             res_irrelevant_neg_table.extend(irrelevant_neg_table_features)
             res_relevant_neg_table.extend(relevant_neg_table_features)
         
-        return res, res_neg_sent, res_irrelevant_neg_table, res_relevant_neg_table
+        if self.mode == "train":
+            random.shuffle(res_neg_sent)
+            random.shuffle(res_irrelevant_neg_table)
+            random.shuffle(res_relevant_neg_table)
+            data = res + res_relevant_neg_table[:min(len(res_relevant_neg_table),len(res) * 3)] + res_irrelevant_neg_table[:min(len(res_irrelevant_neg_table),len(res) * 2)] + res_neg_sent[:min(len(res_neg_sent),len(res))]
+        else:
+            data = res + res_neg_sent + res_irrelevant_neg_table + res_relevant_neg_table
+        #print(self.mode, len(data))
+
+        return data
 
     def get_example_feature(self,example):
       question = example["qa"]["question"]
