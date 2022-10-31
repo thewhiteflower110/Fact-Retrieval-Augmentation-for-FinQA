@@ -97,8 +97,10 @@ def save_model(model, optimizer, args, config, filepath):
 writer = SummaryWriter('runs/Fact Retriever Module')
 
 def train_log(dict):
-    writer.add_scalar("Loss/train", dict["loss"])
-    writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
+    writer.add_scalar("Loss/train", dict["loss"], dict["epoch"])
+    #writer.add_scalar("Loss/Val", dict["val_loss"], dict["epoch"])
+
+
 
 def train(args):
     device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
@@ -113,8 +115,8 @@ def train(args):
     retriever = RetrieverModel(retriever_config["model"]["init_args"])
     retriever = retriever.to(device)
 
-    train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"])
-    dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"])
+    train_dataset = RetrieverDataset(args.dev,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
+    dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"],mode="valid")
 
     train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=retriever_config["data"]["init_args"]["batch_size"],
                                   collate_fn=customized_retriever_collate_fn)
@@ -166,19 +168,19 @@ def train(args):
     #Finetune the Retriever Model
     opt_params = retriever_config["model"]["init_args"]["optimizer"]["init_args"]
     lrs_params = retriever_config["model"]["init_args"]["lr_scheduler"]
-    optimizer = configure_optimizers(retriever,opt_params,lrs_params)
+    scheduler = configure_optimizers(retriever,opt_params,lrs_params)
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
-    training_output_dict={}
+    training_output_dict=[]
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
-            input_ids = torch.tensor(batch["input_ids"]).to("cuda")
-            attention_mask = torch.tensor(batch["input_mask"]).to("cuda")
-            labels = torch.tensor(batch["labels"]).to("cuda")
-            segment_ids = batch["segment_ids"].to("cuda")
+            #input_ids = torch.tensor(batch["input_ids"]).to(device)
+            #attention_mask = torch.tensor(batch["input_mask"]).to(device)
+            labels = torch.tensor(batch["label"]).to(device)
+            #segment_ids = torch.tensor(batch["segment_ids"]).to(device)
             metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
-            output_dicts = retriever.train(input_ids, attention_mask, segment_ids, metadata) #intuitively calling the forward method
+            output_dicts = retriever.forward(batch["input_ids"], batch["input_mask"], batch["segment_ids"], metadata, device) #intuitively calling the forward method
             logits = []
             for output_dict in output_dicts:
                 logits.append(output_dict["logits"])
@@ -189,13 +191,13 @@ def train(args):
             train_loss+=total_loss
             train_log({"loss":total_loss, "epoch":epoch})
             # Adjust learning weights
-            optimizer.step()
-            training_output_dict.extend(output_dicts)
+            scheduler.step()
+            training_output_dict.append(output_dicts)
             #logging mechanism for loss
         #epoch wise loss logs here--
     res,res_message = retriever_evaluate(training_output_dict,args.train,args.topn)
     filepath="./"
-    save_model(retriever, optimizer, retriever_config, filepath)
+    save_model(retriever, scheduler, retriever_config, filepath)
     
     #Getting val results on Fact Retriever Module(Retriever + Question Classification):
     acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device)
@@ -247,12 +249,8 @@ def configure_optimizers(model,opt_params,lrs_params):
     else:
         raise ValueError(f"lr_scheduler {lrs_params} is not supported")
 
-    return {"optimizer": optimizer, 
-            "lr_scheduler": {
-                "scheduler": lr_scheduler,
-                "interval": "step"
-                }
-            }
+    
+    return lr_scheduler
 
 #change the args according to need
 def get_args():
@@ -262,6 +260,8 @@ def get_args():
     parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--topn", type=int, default=3)    
+    parser.add_argument("--epochs", type=int, default=20)    
+
     args = parser.parse_args()
     print(f"args: {vars(args)}")
     return args
