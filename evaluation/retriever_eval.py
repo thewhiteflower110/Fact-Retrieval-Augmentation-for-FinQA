@@ -1,4 +1,5 @@
 #Evaluating Retriever's efficiency
+import json
 def retriever_eval(ori_file):
     with open(ori_file) as f:
         data_all = json.load(f)
@@ -8,9 +9,9 @@ def retriever_eval(ori_file):
     #Go by each entry, and check if res_filename contains that id
     count_data = 0
     for data in data_all:
-        if table_retrieved_topn in data:
-            pred_table_inds = data["table_retrieved_topn"]
-            pred_sent_inds = data["text_retrieved_topn"] 
+        if "table_retrieved_topn" in data:
+            pred_table_inds_topn = data["table_retrieved_topn"]
+            pred_sent_inds_topn = data["text_retrieved_topn"] 
             true_sent_inds = data["qa"]["text_evidence"]
             true_table_inds = data["qa"]["table_evidence"]
             correct_table_ids = len(set(pred_table_inds_topn).intersection(true_table_inds)) 
