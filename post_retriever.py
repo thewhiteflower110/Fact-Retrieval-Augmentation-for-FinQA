@@ -4,6 +4,13 @@ import json
 1. Evaluates the output of the model according to facts extracted
 2. Adds the retrieved facts to the data files for PG Module to work on it.
 '''
+def combine_all_outputs(dicts):
+    super_dict = {}
+    for d in dicts:
+        for k, v in d.items():  # d.items() in Python 3+
+            super_dict.setdefault(k, []).append(v)
+    return super_dict
+
 def retriever_evaluate(output_dict, ori_file, topn):
     '''
     save results to file. calculate recall
@@ -13,6 +20,7 @@ def retriever_evaluate(output_dict, ori_file, topn):
     ori_file = original file
     topn = #number of top facts to be extracted
     '''
+    output_dict = combine_all_outputs(output_dict)
     #Sample example of 1 pass of for loop [0.4,0.5,0.1] , uid=45, facts=[4,90,24]
     all_files_logits = output_dict["logits"]
     all_files_filename_ids = output_dict["filename_id"]
