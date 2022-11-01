@@ -8,6 +8,7 @@ from transformers.optimization import get_cosine_schedule_with_warmup
 class RetrieverModel(nn.Module):    
     def __init__(self, config):
         super().__init__()
+        config=config["model"]["init_args"]
         self.model = AutoModel.from_pretrained(config["transformer_model_name"])
         self.model_config = AutoConfig.from_pretrained(config["transformer_model_name"])
         self.criterion = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
@@ -54,7 +55,7 @@ class RetrieverModel(nn.Module):
         for i in range(len(metadata)):
             output_dicts.append({"logits": logits[i], "filename_id": metadata[i]["filename_id"], "ind": metadata[i]["ind"]})
         return output_dicts
-    
+    '''
     # Deprecated Method (why is this deprecated again?)
     def predict(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         #get batch wise vectors from dataloader
@@ -71,7 +72,7 @@ class RetrieverModel(nn.Module):
     
     # Deprecated Method; again, why is this deprecated? Is it because we don't have annotations
     #  in the data for it?
-    '''
+    
     # Depricated Method
 
     def validation(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
