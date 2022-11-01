@@ -99,7 +99,7 @@ def save_model(name, model, optimizer, args, config, filepath):
         'numpy_rng': np.random.get_state(),
         'torch_rng': torch.random.get_rng_state(),
     }
-    files=filepath+"/name"+".pt"
+    files=filepath+"/"+name+".pt"
     torch.save(save_info, files)
     print(f"save the model to {filepath}")
 
@@ -121,7 +121,7 @@ def train(args):
     with open(constants.retriever_config, 'r') as file:
         retriever_config = yaml.safe_load(file)    
     #config = retriever_config["model"]["init_args"]
-    retriever = RetrieverModel(retriever_config["model"]["init_args"])
+    retriever = RetrieverModel(retriever_config)
     retriever = retriever.to(device)
 
     train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
@@ -132,7 +132,7 @@ def train(args):
     dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=retriever_config["data"]["init_args"]["val_batch_size"],
                                 collate_fn=customized_retriever_collate_fn)
 
-   
+    
     #question classification config
     with open(constants.qc_config, 'r') as file:
         qc_config = yaml.safe_load(file)  
@@ -211,11 +211,10 @@ def train(args):
         #log the metrics
 
     retriever_evaluate(training_output_dict,args.train,args.topn)
-    path = "./checkpoints"
-    if not os.path.exists(path):
+    if not os.path.exists(args.save_model_path):
         # Create a new directory because it does not exist
-        os.makedirs(path)
-    save_model("FactRetriever", retriever, scheduler, args, retriever_config, path)
+        os.makedirs(args.save_model_path)
+    save_model("FactRetriever", retriever, scheduler, args, retriever_config, args.save_model_path)
 
     
 # Why group the fact retriever and the question classification module together like this?
@@ -223,13 +222,16 @@ def train(args):
 def test(args):
     with torch.no_grad():
         device = torch.device('cuda') if args.use_gpu else torch.device('cpu')
-        saved = torch.load(args.filepath)
+        name="FactRetriever"
+        path= args.save_model_path+"/"+name+".pt"
+        #path= args.save_model_path+"/name.pt"
+        saved = torch.load(path)
         config = saved['model_config']
         retriever = RetrieverModel(config)
         retriever = retriever.to(device)
-        retriever.load_state_dict(saved['retriever'])
+        retriever.load_state_dict(saved["model"])
 
-        test_dataset = RetrieverDataset(args.dev, config["data"]["init_args"]["transformer_model_name"])
+        test_dataset = RetrieverDataset(args.test, config["data"]["init_args"]["transformer_model_name"])
 
         test_dataloader = DataLoader(test_dataset, shuffle=True, batch_size=config["data"]["init_args"]["batch_size"],
                                   collate_fn=customized_retriever_collate_fn)
@@ -239,14 +241,14 @@ def test(args):
         questionClassificationModel.load_state_dict(saved['questionClassificationModel'])
         
 
-        print(f"load model from {args.filepath}")
+        print(f"load model from {path}")
         
         #get the dataset and dataloaders
         # Need to know what the type and origin of "test_dataloader" is? Is it a function?
         #  An iterable dict? A numpy array? Where is it's value set?
         #qc_acc, qc_f1, qc_y_true, qc_y_preds, qc_avg_loss = qc_model_eval(test_dataloader, questionClassificationModel, device)
         retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device, args.test,args.topn)
-        
+        print("Test values here")
         with open(args.test_out, "w+") as f:
             print(f"test acc :: {retriever_acc :.3f}")
             for t, p in zip( retriever_y_true, retriever_y_preds):
@@ -272,7 +274,9 @@ def get_args():
     parser.add_argument("--test", type=str, default="data/cfimdb-test.txt")
     parser.add_argument("--use_gpu", action='store_true')
     parser.add_argument("--topn", type=int, default=3)    
-    parser.add_argument("--epochs", type=int, default=10)    
+    parser.add_argument("--epochs", type=int, default=1)   
+    parser.add_argument("--save_model_path", type=str, default="./checkpoints")  
+    parser.add_argument("--test_out", type=str, default="results.txt")  
 
     args = parser.parse_args()
     print(f"args: {vars(args)}")
