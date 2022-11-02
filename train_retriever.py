@@ -17,6 +17,7 @@ from evaluation.retriever_eval import retriever_eval
 from torch.utils.tensorboard import SummaryWriter
 from data.retriever_data import RetrieverDataset, customized_retriever_collate_fn
 from torchmetrics import F1Score
+torch.cuda.empty_cache()
 
 TQDM_DISABLE=True
 # fix the random seed
@@ -101,14 +102,20 @@ def train(args):
     #config = retriever_config["model"]["init_args"]
     retriever = RetrieverModel(retriever_config)
     retriever = retriever.to(device)
-
+    print("loading data")
     train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
     dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"],mode="valid")
 
-    train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=retriever_config["data"]["init_args"]["batch_size"],
-                                  collate_fn=customized_retriever_collate_fn)
-    dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=retriever_config["data"]["init_args"]["val_batch_size"],
-                                collate_fn=customized_retriever_collate_fn)
+    if !args.train_from_loaders:
+        train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=retriever_config["data"]["init_args"]["batch_size"],
+                                      collate_fn=customized_retriever_collate_fn)
+        dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=retriever_config["data"]["init_args"]["val_batch_size"],
+                                    collate_fn=customized_retriever_collate_fn)
+        torch.save(train_dataloader, 'train_dataloader.pth')
+        torch.save(dev_dataloader, 'dev_dataloader.pth')
+    else:
+        train_dataloader = torch.save('train_dataloader.pth')
+        dev_dataloader = torch.load('dev_dataloader.pth')
 
     
     #Note: make this parallel
@@ -118,6 +125,7 @@ def train(args):
     scheduler = configure_optimizers(retriever,opt_params,lrs_params)
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
     training_output_dict=[]
+    print("training model")
     for epoch in range(args.epochs):
         #this loop discard the .train() method
         train_loss = 0
@@ -143,6 +151,7 @@ def train(args):
             #logging mechanism for loss
         #epoch wise loss logs here--
         #Getting val results on Fact Retriever Module(Retriever + Question Classification):
+        print("epoch ended")
         acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device,args.dev,args.topn)
         print(acc,f1,avg_loss)
         train_log({"val_loss":avg_loss, "epoch":epoch})
@@ -210,6 +219,8 @@ def get_args():
     parser.add_argument("--epochs", type=int, default=1)   
     parser.add_argument("--save_model_path", type=str, default="./checkpoints")  
     parser.add_argument("--test_out", type=str, default="results.txt")  
+    parser.add_argument("--train_from_loaders", type=bool, default=False) 
+    
 
     args = parser.parse_args()
     print(f"args: {vars(args)}")
