@@ -33,7 +33,7 @@ def seed_everything(seed=11711):
 # perform model evaluation in terms of the accuracy and f1 score.
 #  Accuracy and F1 score are not the most useful metrics here. Instead we'll want Top-N
 #  retrieved accuracy.
-def retriever_model_eval(dataloader, retriever, device,data_file,topn):
+def retriever_model_eval(dataloader, retriever, device,data_file,topn,train=False):
     retriever.eval() # switch to eval model, will turn off randomness like dropout
     final_loss = 0
     criterion_loss = nn.CrossEntropyLoss(reduction='none', ignore_index=-1)
@@ -41,18 +41,18 @@ def retriever_model_eval(dataloader, retriever, device,data_file,topn):
     all_labels = []
     all_logits = []
     for step, batch in enumerate(tqdm(dataloader, desc=f'val', disable=TQDM_DISABLE)):            
-        labels = torch.tensor(batch["label"]).to(device)
+        labels = torch.tensor(batch["label"]).cpu()
         metadata = [{"filename_id": filename_id, "ind": ind} for filename_id, ind in zip(batch["filename_id"], batch["ind"])]
         output_dicts = retriever(batch["input_ids"], batch["input_mask"], batch["segment_ids"], metadata, device) #intuitively calling the forward method
         logits = []
         logits_=[]
         for output_dict in output_dicts:
             logits.append(output_dict["logits"])
-            logits_.append(output_dict["logits"].argmax())
-        logits = torch.stack(logits)
+            logits_.append(output_dict["logits"].cpu().argmax())
+        logits = torch.stack(logits).cpu()
         loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
         total_loss = loss.sum() #total loss of entire batch
-        final_loss+=total_loss #total loss of validation
+        final_loss+=total_loss.item() #total loss of validation
         testing_output_dict.extend(output_dicts)
         all_labels.extend(batch["label"])
         all_logits.extend(logits_)
@@ -63,7 +63,11 @@ def retriever_model_eval(dataloader, retriever, device,data_file,topn):
     #f1(, all_labels)
     f1 = f1_score(all_labels, all_logits, average='macro')
     acc = accuracy_score(all_labels, all_logits)
-    retriever_evaluate(testing_output_dict,data_file,topn)
+    if train!=True:
+      retriever_evaluate(testing_output_dict,data_file,topn)
+      recall = retriever_eval(data_file[:-4]+"_post_eval.json")
+      print(recall)
+    #retriever_evaluate(testing_output_dict,data_file,topn)
     #recall = retriever_eval(data_file)
     return acc, f1,all_labels, all_logits, avg_final_loss
 
@@ -115,7 +119,7 @@ def train(args):
         torch.save(train_dataloader, 'train_dataloader.pth')
         torch.save(dev_dataloader, 'dev_dataloader.pth')
     else:
-        train_dataloader = torch.save('train_dataloader.pth')
+        train_dataloader = torch.load('train_dataloader.pth')
         dev_dataloader = torch.load('dev_dataloader.pth')
 
     
@@ -129,6 +133,8 @@ def train(args):
     print("training model")
     for epoch in range(args.epochs):
         #this loop discard the .train() method
+        import time
+        start=time.time()
         train_loss = 0
         for step, batch in enumerate(tqdm(train_dataloader, desc=f'train-{epoch}', disable=TQDM_DISABLE)):            
             #input_ids = torch.tensor(batch["input_ids"]).to(device)
@@ -144,7 +150,7 @@ def train(args):
             loss = criterion_loss(logits.view(-1, logits.shape[-1]), labels.view(-1))
             total_loss = loss.sum()
             total_loss.backward()
-            train_loss+=total_loss
+            train_loss+=total_loss.item()
             train_log({"loss":total_loss, "epoch":epoch})
             # Adjust learning weights
             scheduler.step()
@@ -152,13 +158,18 @@ def train(args):
             #logging mechanism for loss
         #epoch wise loss logs here--
         #Getting val results on Fact Retriever Module(Retriever + Question Classification):
-        print("epoch ended")
-        acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device,args.dev,args.topn)
+        end=time.time()
+        print(str(epoch)," epoch completed in ",str(end-start),"sec.")
+        #print("epoch ended")
+        acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(dev_dataloader, retriever, device,args.dev,args.topn,,train=True)
         print(acc,f1,avg_loss)
         train_log({"val_loss":avg_loss, "epoch":epoch})
         #log the metrics
 
-    retriever_evaluate(training_output_dict,args.train,args.topn)
+    acc, f1, y_true, y_preds,avg_loss = retriever_model_eval(train_dataloader, retriever, device,args.train,args.topn,train=False)
+    print("above is training recall")
+    print("final training stats")
+    print("acc={acc},f1 score={f1},avg loss={avg_loss}")
     if not os.path.exists(args.save_model_path):
         # Create a new directory because it does not exist
         os.makedirs(args.save_model_path)
@@ -190,7 +201,7 @@ def test(args):
         # Need to know what the type and origin of "test_dataloader" is? Is it a function?
         #  An iterable dict? A numpy array? Where is it's value set?
         #qc_acc, qc_f1, qc_y_true, qc_y_preds, qc_avg_loss = qc_model_eval(test_dataloader, questionClassificationModel, device)
-        retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device, args.test,args.topn)
+        retriever_acc, retriever_f1, retriever_y_true, retriever_y_preds,retriever_avg_loss = retriever_model_eval(test_dataloader, retriever, device, args.test,args.topn,train=False)
         print("Test values here")
         with open(args.test_out, "w+") as f:
             print(f"test acc :: {retriever_acc :.3f}")
@@ -222,7 +233,6 @@ def get_args():
     parser.add_argument("--test_out", type=str, default="results.txt")  
     parser.add_argument("--train_from_loaders", type=bool, default=False) 
     
-
     args = parser.parse_args()
     print(f"args: {vars(args)}")
     return args
