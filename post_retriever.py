@@ -115,5 +115,5 @@ def retriever_evaluate(output_dict, ori_file, topn):
     #res_message = f"Top {topn}: {res}\n"
     
     #return res, res_message
-    write_predictions(data, ori_file[:-4]+"_post_eval.json")
+    write_predictions(data_all, ori_file[:-4]+"_post_eval.json")
     return None
