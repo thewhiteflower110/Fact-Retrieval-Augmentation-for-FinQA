@@ -11,6 +11,12 @@ def combine_all_outputs(dicts):
             super_dict.setdefault(k, []).append(v)
     return super_dict
 
+def write_predictions(all_predictions, output_prediction_file):
+    """Writes final predictions in json format."""
+
+    with open(output_prediction_file, "w") as writer:
+        writer.write(json.dumps(all_predictions, indent=4) + "\n")
+
 def retriever_evaluate(output_dict, ori_file, topn):
     '''
     save results to file. calculate recall
@@ -109,4 +115,5 @@ def retriever_evaluate(output_dict, ori_file, topn):
     #res_message = f"Top {topn}: {res}\n"
     
     #return res, res_message
+    write_predictions(data, ori_file[:-4]+"_post_eval.json")
     return None
