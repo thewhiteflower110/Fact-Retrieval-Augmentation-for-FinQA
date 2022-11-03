@@ -103,10 +103,11 @@ def train(args):
     retriever = RetrieverModel(retriever_config)
     retriever = retriever.to(device)
     print("loading data")
-    train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
-    dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"],mode="valid")
-
+    
     if args.train_from_loaders==False:
+        train_dataset = RetrieverDataset(args.train,retriever_config["data"]["init_args"]["transformer_model_name"],mode="train")
+        dev_dataset = RetrieverDataset(args.dev, retriever_config["data"]["init_args"]["transformer_model_name"],mode="valid")
+
         train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=retriever_config["data"]["init_args"]["batch_size"],
                                       collate_fn=customized_retriever_collate_fn)
         dev_dataloader = DataLoader(dev_dataset, shuffle=False, batch_size=retriever_config["data"]["init_args"]["val_batch_size"],
